@@ -1,6 +1,6 @@
 ---
 name: cldraw
-description: Use the local cldraw command to create, annotate, recover, or paste PNG drawings and screenshots for agent workflows.
+description: Run cldraw directly when the user wants to create, annotate, recover, or paste PNG drawings and screenshots.
 license: MIT
 compatibility: macOS; browser access; clipboard and screenshot modes use AppleScript/screencapture.
 allowed-tools: Bash Read
@@ -11,7 +11,7 @@ metadata:
 
 # cldraw
 
-Use when a quick drawing, screenshot markup, clipboard-image recovery, or `@/tmp/...png` image token is better than prose.
+Use when a quick drawing, screenshot markup, clipboard-image recovery, or `@/tmp/...png` image token is better than prose. Do not inspect the repo first unless the command fails.
 
 ## Contract
 
@@ -55,26 +55,27 @@ cldraw edit /tmp/cldraw-xxxxxxxx.png
 
 ## Restore
 
-Executable:
+Command:
 
 ```bash
 ~/commands/cldraw
 ```
 
-If missing, rebuild from source:
+If missing or broken, restore the launcher:
 
 ```bash
+cat > ~/commands/cldraw <<'EOF'
+#!/usr/bin/env zsh
+set -euo pipefail
 cd /Users/yesh/Documents/personal/cldraw
-bun install
-bun build --compile --target=bun --external vite --compile-autoload-package-json --compile-autoload-tsconfig --outfile ~/commands/cldraw src/cli.ts
+exec bun run src/cli.ts "$@"
+EOF
 chmod +x ~/commands/cldraw
 ```
 
-Fallback source launcher:
+Do not rebuild with `bun build --compile`; Vite's dev server is not reliable from Bun's embedded executable filesystem.
 
-```bash
-exec bun run /Users/yesh/Documents/personal/cldraw/src/cli.ts "$@"
-```
+If dependencies are missing: `cd /Users/yesh/Documents/personal/cldraw && bun install`.
 
 ## Verification
 

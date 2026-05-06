@@ -14,6 +14,10 @@ type CliOptions = {
 
 function parseArgs(argv: string[]): CliOptions {
   const args = [...argv];
+  if (args.length === 1 && (args[0] === "--help" || args[0] === "-h")) {
+    console.log("usage: cldraw [--json] [--paste] | cldraw edit <image> [--json] [--paste] | cldraw paste [--json] [--paste] | cldraw shot [--json] [--paste]");
+    process.exit(0);
+  }
   const jsonIndex = args.indexOf("--json");
   const json = jsonIndex !== -1;
   if (json) args.splice(jsonIndex, 1);
