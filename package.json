@@ -1,0 +1,31 @@
+{
+  "name": "cldraw",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "cldraw": "./src/cli.ts"
+  },
+  "scripts": {
+    "cldraw": "bun run src/cli.ts",
+    "dev": "bun run src/server.ts",
+    "smoke": "bun run scripts/smoke.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^5.0.0",
+    "konva": "^10.0.12",
+    "lucide-react": "^0.468.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-konva": "^19.0.0",
+    "vite": "^6.0.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.57.0",
+    "@types/bun": "^1.1.14",
+    "@types/react": "^19.0.1",
+    "@types/react-dom": "^19.0.1",
+    "typescript": "^5.7.2"
+  }
+}
