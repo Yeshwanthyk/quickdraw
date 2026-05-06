@@ -11,7 +11,7 @@ metadata:
 
 # cldraw
 
-Use when a quick drawing, screenshot markup, clipboard-image recovery, or `@/tmp/...png` image token is better than prose. Do not inspect the repo first unless the command fails.
+Use when a quick drawing, screenshot markup, clipboard-image recovery, or `@/tmp/...png` image token is better than prose. Use the installed `cldraw` command from the current environment; do not inspect the source repo first unless the command fails.
 
 ## Contract
 
@@ -55,27 +55,20 @@ cldraw edit /tmp/cldraw-xxxxxxxx.png
 
 ## Restore
 
-Command:
+Command source:
+- Prefer `cldraw` from `PATH`.
+- In Yesh's environment, gitgud/dotfile sync installs it under `~/commands/cldraw`.
+- The command is a self-extracting executable with its app payload; it should not depend on `/Users/yesh/Documents/personal/cldraw`.
+
+If rebuilding locally from the source checkout:
 
 ```bash
-~/commands/cldraw
-```
-
-If missing or broken, restore the launcher:
-
-```bash
-cat > ~/commands/cldraw <<'EOF'
-#!/usr/bin/env zsh
-set -euo pipefail
 cd /Users/yesh/Documents/personal/cldraw
-exec bun run src/cli.ts "$@"
-EOF
-chmod +x ~/commands/cldraw
+bun install
+bun run build:command
 ```
 
-Do not rebuild with `bun build --compile`; Vite's dev server is not reliable from Bun's embedded executable filesystem.
-
-If dependencies are missing: `cd /Users/yesh/Documents/personal/cldraw && bun install`.
+Do not replace it with a repo-path launcher or `bun build --compile`; both are less portable for this Vite-based tool.
 
 ## Verification
 

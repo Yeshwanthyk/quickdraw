@@ -7,6 +7,7 @@
     "cldraw": "./src/cli.ts"
   },
   "scripts": {
+    "build:command": "scripts/build-command.sh",
     "cldraw": "bun run src/cli.ts",
     "dev": "bun run src/server.ts",
     "smoke": "bun run scripts/smoke.ts",
