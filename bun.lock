@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "cldraw",
+      "name": "quick-paint",
       "dependencies": {
         "@vitejs/plugin-react": "^5.0.0",
         "konva": "^10.0.12",

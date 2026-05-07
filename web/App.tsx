@@ -255,13 +255,13 @@ export default function App() {
     return () => window.removeEventListener("paste", onPaste);
   }, [loadPastedImage]);
 
-  if (!source) return <div className="loading">Loading cldraw...</div>;
+  if (!source) return <div className="loading">Loading quick-paint...</div>;
 
   const rendered = draft ? [...shapes, draft] : shapes;
 
   return (
     <main className="shell">
-      <div className="toolbar" role="toolbar" aria-label="cldraw tools">
+      <div className="toolbar" role="toolbar" aria-label="quick-paint tools">
         <ToolButton active={tool === "select"} title="Select (1)" onClick={() => setTool("select")}><MousePointer2 size={17} /></ToolButton>
         <ToolButton active={tool === "pen"} title="Pen (2)" onClick={() => setTool("pen")}><PenLine size={17} /></ToolButton>
         <ToolButton active={tool === "highlighter"} title="Highlighter (3)" onClick={() => setTool("highlighter")}><Highlighter size={17} /></ToolButton>

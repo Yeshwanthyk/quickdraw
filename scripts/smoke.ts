@@ -1,17 +1,17 @@
 import { existsSync, statSync } from "node:fs";
 import { chromium } from "@playwright/test";
 import { readClipboardImage } from "../src/clipboard";
-import { startCldrawServer, type CldrawResult } from "../src/server";
+import { startQuickPaintServer, type QuickPaintResult } from "../src/server";
 
-function verifyResult(result: CldrawResult) {
+function verifyResult(result: QuickPaintResult) {
   if (!existsSync(result.path)) throw new Error(`missing output: ${result.path}`);
   if (statSync(result.path).size < 100) throw new Error(`empty output: ${result.path}`);
   if (result.mime !== "image/png") throw new Error(`unexpected mime: ${result.mime}`);
   if (result.width <= 0 || result.height <= 0) throw new Error(`bad dimensions: ${result.width}x${result.height}`);
 }
 
-async function drawAndSave(browser: Awaited<ReturnType<typeof chromium.launch>>, mode: Parameters<typeof startCldrawServer>[0]) {
-  const session = await startCldrawServer(mode, { open: false });
+async function drawAndSave(browser: Awaited<ReturnType<typeof chromium.launch>>, mode: Parameters<typeof startQuickPaintServer>[0]) {
+  const session = await startQuickPaintServer(mode, { open: false });
   try {
     const page = await browser.newPage({ viewport: { width: 1200, height: 800 } });
     await page.goto(session.url);

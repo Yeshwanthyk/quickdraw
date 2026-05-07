@@ -9,7 +9,7 @@ export type CliMode =
   | { kind: "blank" }
   | { kind: "edit"; path: string };
 
-export type CldrawResult = {
+export type QuickPaintResult = {
   path: string;
   mime: "image/png";
   width: number;
@@ -58,15 +58,15 @@ function pngBufferFromDataUrl(dataUrl: string): Buffer {
   return Buffer.from(dataUrl.slice(index + marker.length), "base64");
 }
 
-export async function startCldrawServer(mode: CliMode, options: ServerOptions = {}) {
+export async function startQuickPaintServer(mode: CliMode, options: ServerOptions = {}) {
   mkdirSync("/tmp", { recursive: true });
   const source = sourceForMode(mode);
   const token = randomBytes(12).toString("hex");
-  const outPath = join("/tmp", `cldraw-${token.slice(0, 8)}.png`);
+  const outPath = join("/tmp", `quick-paint-${token.slice(0, 8)}.png`);
 
-  let resolveResult!: (result: CldrawResult) => void;
+  let resolveResult!: (result: QuickPaintResult) => void;
   let rejectResult!: (error: Error) => void;
-  const result = new Promise<CldrawResult>((resolve, reject) => {
+  const result = new Promise<QuickPaintResult>((resolve, reject) => {
     resolveResult = resolve;
     rejectResult = reject;
   });
@@ -80,7 +80,7 @@ export async function startCldrawServer(mode: CliMode, options: ServerOptions = 
     },
     plugins: [
       {
-        name: "cldraw-api",
+        name: "quick-paint-api",
         configureServer(server) {
           server.middlewares.use(async (req, res, next) => {
             const url = new URL(req.url ?? "/", "http://127.0.0.1");
@@ -138,7 +138,7 @@ export async function startCldrawServer(mode: CliMode, options: ServerOptions = 
   });
   await vite.listen();
   const origin = vite.resolvedUrls?.local[0]?.replace(/\/$/, "");
-  if (!origin) throw new Error("failed to start cldraw server");
+  if (!origin) throw new Error("failed to start quick-paint server");
   const url = `${origin}/?token=${token}`;
   if (options.open !== false) openBrowser(url);
 

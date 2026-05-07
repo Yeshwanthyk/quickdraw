@@ -2,7 +2,7 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { readClipboardImage } from "./clipboard";
-import { startCldrawServer, type CliMode, type CldrawResult } from "./server";
+import { startQuickPaintServer, type CliMode, type QuickPaintResult } from "./server";
 import { focusedAppBundleId, pasteTextIntoApp } from "./sinks";
 import { captureScreenshot } from "./screenshot";
 
@@ -15,7 +15,7 @@ type CliOptions = {
 function parseArgs(argv: string[]): CliOptions {
   const args = [...argv];
   if (args.length === 1 && (args[0] === "--help" || args[0] === "-h")) {
-    console.log("usage: cldraw [--json] [--paste] | cldraw edit <image> [--json] [--paste] | cldraw paste [--json] [--paste] | cldraw shot [--json] [--paste]");
+    console.log("usage: quick-paint [--json] [--paste] | quick-paint edit <image> [--json] [--paste] | quick-paint paste [--json] [--paste] | quick-paint shot [--json] [--paste]");
     process.exit(0);
   }
   const jsonIndex = args.indexOf("--json");
@@ -44,10 +44,10 @@ function parseArgs(argv: string[]): CliOptions {
     return { mode: { kind: "edit", path: captureScreenshot() }, json, paste };
   }
 
-  throw new Error(`usage: cldraw [--json] [--paste] | cldraw edit <image> [--json] [--paste] | cldraw paste [--json] [--paste] | cldraw shot [--json] [--paste]`);
+  throw new Error(`usage: quick-paint [--json] [--paste] | quick-paint edit <image> [--json] [--paste] | quick-paint paste [--json] [--paste] | quick-paint shot [--json] [--paste]`);
 }
 
-function printResult(result: CldrawResult, json: boolean) {
+function printResult(result: QuickPaintResult, json: boolean) {
   if (json) {
     console.log(JSON.stringify(result, null, 2));
     return;
@@ -58,7 +58,7 @@ function printResult(result: CldrawResult, json: boolean) {
 async function main() {
   const options = parseArgs(Bun.argv.slice(2));
   const pasteTarget = options.paste ? focusedAppBundleId() : null;
-  const session = await startCldrawServer(options.mode);
+  const session = await startQuickPaintServer(options.mode);
   const result = await session.result;
   session.stop();
   printResult(result, options.json);

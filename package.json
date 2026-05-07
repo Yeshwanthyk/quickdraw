@@ -1,14 +1,14 @@
 {
-  "name": "cldraw",
+  "name": "quick-paint",
   "version": "0.1.0",
   "type": "module",
   "private": true,
   "bin": {
-    "cldraw": "./src/cli.ts"
+    "quick-paint": "./src/cli.ts"
   },
   "scripts": {
     "build:command": "scripts/build-command.sh",
-    "cldraw": "bun run src/cli.ts",
+    "quick-paint": "bun run src/cli.ts",
     "dev": "bun run src/server.ts",
     "smoke": "bun run scripts/smoke.ts",
     "typecheck": "tsc --noEmit"

@@ -29,7 +29,7 @@ export function copyImageToClipboard(path: string): boolean {
 
 export function readClipboardImage(): string | null {
   ensureMacOS("clipboard image paste");
-  const path = join(mkdtempSync(join(tmpdir(), "cldraw-clipboard-")), "clipboard.png");
+  const path = join(mkdtempSync(join(tmpdir(), "quick-paint-clipboard-")), "clipboard.png");
   const proc = Bun.spawnSync([
     "osascript",
     "-e",

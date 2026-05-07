@@ -1,31 +1,31 @@
 ---
-name: cldraw
-description: Run cldraw directly when the user wants to create, annotate, recover, or paste PNG drawings and screenshots.
+name: quick-paint
+description: Run quick-paint directly when the user wants to create, annotate, recover, or paste PNG drawings and screenshots.
 license: MIT
 compatibility: macOS; browser access; clipboard and screenshot modes use AppleScript/screencapture.
 allowed-tools: Bash Read
 metadata:
-  command: cldraw
-  output: "@/tmp/cldraw-*.png"
+  command: quick-paint
+  output: "@/tmp/quick-paint-*.png"
 ---
 
-# cldraw
+# quick-paint
 
-Use when a quick drawing, screenshot markup, clipboard-image recovery, or `@/tmp/...png` image token is better than prose. Use the installed `cldraw` command from the current environment; do not inspect the source repo first unless the command fails.
+Use when a quick drawing, screenshot markup, clipboard-image recovery, or `@/tmp/...png` image token is better than prose. Use the installed `quick-paint` command from the current environment; do not inspect the source repo first unless the command fails.
 
 ## Contract
 
-`cldraw` opens a temporary browser drawing surface, blocks until Save/Cancel, writes a PNG under `/tmp`, copies the PNG to the macOS clipboard, and prints `@/tmp/cldraw-*.png`.
+`quick-paint` opens a temporary browser drawing surface, blocks until Save/Cancel, writes a PNG under `/tmp`, copies the PNG to the macOS clipboard, and prints `@/tmp/quick-paint-*.png`.
 
 ## Commands
 
 ```bash
-cldraw
-cldraw edit /path/to/image.png
-cldraw paste
-cldraw shot
-cldraw --json
-cldraw shot --paste
+quick-paint
+quick-paint edit /path/to/image.png
+quick-paint paste
+quick-paint shot
+quick-paint --json
+quick-paint shot --paste
 ```
 
 Modes:
@@ -38,32 +38,32 @@ Modes:
 
 ## Workflow
 
-1. Run the smallest command for the source: `cldraw`, `cldraw edit <file>`, `cldraw paste`, or `cldraw shot`.
+1. Run the smallest command for the source: `quick-paint`, `quick-paint edit <file>`, `quick-paint paste`, or `quick-paint shot`.
 2. Tell the user the browser is open and the command is waiting for Save.
 3. Use the printed `@/tmp/...png` as the durable artifact.
 4. To show it in Codex, render:
 
 ```markdown
-![cldraw output](/tmp/cldraw-xxxxxxxx.png)
+![quick-paint output](/tmp/quick-paint-xxxxxxxx.png)
 ```
 
 To continue editing:
 
 ```bash
-cldraw edit /tmp/cldraw-xxxxxxxx.png
+quick-paint edit /tmp/quick-paint-xxxxxxxx.png
 ```
 
 ## Restore
 
 Command source:
-- Prefer `cldraw` from `PATH`.
-- In Yesh's environment, gitgud/dotfile sync installs it under `~/commands/cldraw`.
-- The command is a self-extracting executable with its app payload; it should not depend on `/Users/yesh/Documents/personal/cldraw`.
+- Prefer `quick-paint` from `PATH`.
+- In Yesh's environment, gitgud/dotfile sync installs it under `~/commands/quick-paint`.
+- The command is a self-extracting executable with its app payload; it should not depend on `/Users/yesh/Documents/personal/quick-paint`.
 
 If rebuilding locally from the source checkout:
 
 ```bash
-cd /Users/yesh/Documents/personal/cldraw
+cd /Users/yesh/Documents/personal/quick-paint
 bun install
 bun run build:command
 ```
@@ -73,8 +73,8 @@ Do not replace it with a repo-path launcher or `bun build --compile`; both are l
 ## Verification
 
 ```bash
-command -v cldraw
-cd /Users/yesh/Documents/personal/cldraw && bun run typecheck
+command -v quick-paint
+cd /Users/yesh/Documents/personal/quick-paint && bun run typecheck
 ```
 
-Do not claim an image exists until `cldraw` exits and prints a path or JSON result.
+Do not claim an image exists until `quick-paint` exits and prints a path or JSON result.
