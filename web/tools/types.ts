@@ -1,4 +1,4 @@
-export type Tool = "pen" | "highlighter" | "arrow" | "rect" | "text" | "redact";
+export type Tool = "select" | "pen" | "highlighter" | "arrow" | "rect" | "text" | "redact";
 
 export type DrawColor = "#e11d48" | "#f59e0b" | "#10b981" | "#2563eb" | "#111827" | "#ffffff";
 
