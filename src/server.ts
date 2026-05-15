@@ -4,10 +4,12 @@ import { extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer as createViteServer, type ViteDevServer } from "vite";
 import { copyImageToClipboard } from "./clipboard";
+import { embedSceneMetadata } from "./png-metadata";
+import { normalizeScene, type SceneSpec } from "./spec";
 
 export type CliMode =
-  | { kind: "blank" }
-  | { kind: "edit"; path: string };
+  | { kind: "blank"; scene?: SceneSpec }
+  | { kind: "edit"; path: string; scene?: SceneSpec };
 
 export type QuickPaintResult = {
   path: string;
@@ -22,8 +24,8 @@ type ServerOptions = {
 };
 
 type SourcePayload =
-  | { kind: "blank" }
-  | { kind: "image"; name: string; dataUrl: string };
+  | { kind: "blank"; scene?: SceneSpec }
+  | { kind: "image"; name: string; dataUrl: string; scene?: SceneSpec };
 
 const imageMimeByExt: Record<string, string> = {
   ".png": "image/png",
@@ -34,13 +36,14 @@ const imageMimeByExt: Record<string, string> = {
 };
 
 function sourceForMode(mode: CliMode): SourcePayload {
-  if (mode.kind === "blank") return { kind: "blank" };
+  if (mode.kind === "blank") return { kind: "blank", scene: mode.scene };
   const bytes = readFileSync(mode.path);
   const mime = imageMimeByExt[extname(mode.path).toLowerCase()] ?? "application/octet-stream";
   return {
     kind: "image",
     name: mode.path,
-    dataUrl: `data:${mime};base64,${bytes.toString("base64")}`
+    dataUrl: `data:${mime};base64,${bytes.toString("base64")}`,
+    scene: mode.scene
   };
 }
 
@@ -97,6 +100,7 @@ export async function startQuickPaintServer(mode: CliMode, options: ServerOption
                 dataUrl?: string;
                 width?: number;
                 height?: number;
+                scene?: unknown;
               };
               if (!body.dataUrl || typeof body.width !== "number" || typeof body.height !== "number") {
                 res.statusCode = 400;
@@ -104,7 +108,9 @@ export async function startQuickPaintServer(mode: CliMode, options: ServerOption
                 res.end(JSON.stringify({ error: "invalid payload" }));
                 return;
               }
-              writeFileSync(outPath, pngBufferFromDataUrl(body.dataUrl));
+              const png = pngBufferFromDataUrl(body.dataUrl);
+              const finalPng = body.scene ? embedSceneMetadata(png, normalizeScene(body.scene)) : png;
+              writeFileSync(outPath, finalPng);
               let clipboard = false;
               try {
                 clipboard = copyImageToClipboard(outPath);
