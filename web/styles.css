@@ -49,6 +49,7 @@ select {
 }
 
 .tool,
+.segment,
 .action,
 select {
   height: 34px;
@@ -64,16 +65,31 @@ select {
   place-items: center;
 }
 
+.segment {
+  display: grid;
+  width: 34px;
+  place-items: center;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, scale 120ms ease;
+}
+
 .tool:hover:not(:disabled),
+.segment:hover,
 .action:hover,
 select:hover {
   border-color: #7c8596;
 }
 
-.tool.active {
+.tool.active,
+.segment.active {
   border-color: #2563eb;
   background: #eaf1ff;
   color: #1d4ed8;
+}
+
+.tool:active:not(:disabled),
+.segment:active,
+.action:active:not(:disabled) {
+  scale: 0.96;
 }
 
 .tool:disabled {
@@ -165,4 +181,26 @@ select {
   border: 1px solid #8e96a3;
   background: white;
   box-shadow: 0 18px 60px rgba(35, 39, 50, 0.26);
+}
+
+.canvasFrame {
+  position: relative;
+  width: max-content;
+}
+
+.textEditor {
+  position: absolute;
+  z-index: 2;
+  min-height: 40px;
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid rgba(37, 99, 235, 0.55);
+  outline: 2px solid rgba(37, 99, 235, 0.18);
+  background: rgba(255, 255, 255, 0.58);
+  box-shadow: 0 8px 26px rgba(35, 39, 50, 0.18);
+  font-weight: 650;
+  line-height: 1.24;
+  resize: none;
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
 }

@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
+import type { SceneSpec } from "../../src/spec";
 
 export type Source =
-  | { kind: "blank" }
-  | { kind: "image"; name: string; dataUrl: string };
+  | { kind: "blank"; scene?: SceneSpec }
+  | { kind: "image"; name: string; dataUrl: string; scene?: SceneSpec };
 
 type LoadedImage = {
   source: Source;
