@@ -423,6 +423,38 @@ async function smokeArrowEndpointEditor(browser: Awaited<ReturnType<typeof chrom
   }
 }
 
+async function smokeGridDraw(browser: Awaited<ReturnType<typeof chromium.launch>>) {
+  const session = await startQuickPaintServer({ kind: "blank" }, { open: false });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1400, height: 1000 } });
+    await page.goto(session.url);
+    await page.getByRole("button", { name: "Grid mode (ASCII)" }).click();
+    await page.getByRole("button", { name: "Rectangle (5)" }).click();
+    const canvas = page.locator(".gridCanvas");
+    const box = await canvas.boundingBox();
+    if (!box) throw new Error("missing grid canvas");
+    // GridMode cells are 12x22 px with a 22px top ruler; draw cells (5,3)->(15,8).
+    await page.mouse.move(box.x + 5 * 12, box.y + 22 + 3 * 22);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 15 * 12, box.y + 22 + 8 * 22);
+    await page.mouse.up();
+    await page.getByRole("button", { name: "Paint mode" }).click();
+    await page.getByRole("button", { name: "Save" }).click();
+    const result = await session.result;
+    verifyResult(result);
+    const scene = normalizeScene(extractSceneMetadata(readFileSync(result.path)));
+    const rect = scene.shapes.find((shape) => shape.type === "rect");
+    // cells -> scene px via 8x16: x=5*8, y=3*16, w=10*8, h=5*16.
+    if (!rect || rect.type !== "rect" || rect.x !== 40 || rect.y !== 48 || rect.width !== 80 || rect.height !== 80) {
+      throw new Error(`grid draw did not snap rect to cells: ${JSON.stringify(rect)}`);
+    }
+    await page.close();
+    return result;
+  } finally {
+    session.stop();
+  }
+}
+
 async function smokeArrowBinding(browser: Awaited<ReturnType<typeof chromium.launch>>) {
   const spec: SceneSpec = {
     canvas: { width: 380, height: 240 },
@@ -820,6 +852,7 @@ async function main() {
     const zOrderResult = await smokeZOrder(browser);
     const arrowEndpointResult = await smokeArrowEndpointEditor(browser);
     const arrowBindingResult = await smokeArrowBinding(browser);
+    const gridDrawResult = await smokeGridDraw(browser);
     const rotatedTextResult = await smokeRotatedTextEdit(browser);
     const rotatedParityResult = await smokeRotatedTextParity(browser);
     const wrappedTextResult = await smokeWrappedText(browser);
@@ -848,7 +881,7 @@ async function main() {
     const reopenedResult = await drawAndSaveViaCli(browser, ["open", "--spec", inspectedPath, cliEditResult.path], { expectedSourceKind: "image" });
     verifySceneMetadata(reopenedResult.path, cliOpenSpec, 0, { width: cliEditResult.width, height: cliEditResult.height });
 
-    console.log(JSON.stringify({ blank: blankResult, clipboardPath: clipPath, edit: editResult, text: textResult, activeText: activeTextResult, selection: selectionResult, multiSelect: multiSelectResult, preciseLineHit: preciseLineHitResult, zOrder: zOrderResult, arrowEndpoint: arrowEndpointResult, arrowBinding: arrowBindingResult, rotatedText: rotatedTextResult, rotatedParity: rotatedParityResult, wrappedText: wrappedTextResult, imageDeselect: imageDeselectResult, scene: sceneResult, cliOpen: cliOpenResult, cliEdit: cliEditResult, reopened: reopenedResult }, null, 2));
+    console.log(JSON.stringify({ blank: blankResult, clipboardPath: clipPath, edit: editResult, text: textResult, activeText: activeTextResult, selection: selectionResult, multiSelect: multiSelectResult, preciseLineHit: preciseLineHitResult, zOrder: zOrderResult, arrowEndpoint: arrowEndpointResult, arrowBinding: arrowBindingResult, gridDraw: gridDrawResult, rotatedText: rotatedTextResult, rotatedParity: rotatedParityResult, wrappedText: wrappedTextResult, imageDeselect: imageDeselectResult, scene: sceneResult, cliOpen: cliOpenResult, cliEdit: cliEditResult, reopened: reopenedResult }, null, 2));
   } finally {
     await browser.close();
   }
