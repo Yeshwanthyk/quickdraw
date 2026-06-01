@@ -30,6 +30,7 @@ type GridModeProps = {
 
 type Cell = { col: number; row: number };
 type Delta = { dCol: number; dRow: number };
+type TextDraft = { col: number; row: number; value: string };
 
 function shapeId() {
   return crypto.randomUUID();
@@ -60,8 +61,11 @@ export function GridMode(props: GridModeProps) {
   const height = RULER + rows * CELL_H;
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const textInputRef = useRef<HTMLInputElement>(null);
+  const textIntentRef = useRef<"commit" | "cancel" | null>(null);
   const [draft, setDraft] = useState<Shape | null>(null);
   const [moveDelta, setMoveDelta] = useState<Delta | null>(null);
+  const [textDraft, setTextDraft] = useState<TextDraft | null>(null);
   const startRef = useRef<Cell | null>(null);
   const moveStartRef = useRef<Cell | null>(null);
   const moveIdsRef = useRef<string[]>([]);
@@ -69,7 +73,7 @@ export function GridMode(props: GridModeProps) {
   const moveDeltaRef = useRef<Delta | null>(null);
   const rafRef = useRef<number | null>(null);
 
-  const cellAt = useCallback((event: React.PointerEvent<HTMLCanvasElement>): Cell => {
+  const cellAt = useCallback((event: React.MouseEvent<HTMLCanvasElement>): Cell => {
     const rect = event.currentTarget.getBoundingClientRect();
     const col = Math.round((event.clientX - rect.left) / CELL_W);
     const row = Math.round((event.clientY - rect.top - RULER) / CELL_H);
@@ -137,6 +141,25 @@ export function GridMode(props: GridModeProps) {
     event.currentTarget.setPointerCapture(event.pointerId);
     startRef.current = cell;
   }, [cellAt, hitTest, onSelect, tool]);
+
+  // Text entry opens on click (not pointerdown) so the mousedown's focus-steal from the
+  // non-focusable canvas can't immediately blur and close the freshly-focused input.
+  const onClick = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {
+    if (tool !== "text") return;
+    const cell = cellAt(event);
+    setTextDraft({ col: cell.col, row: cell.row, value: "" });
+  }, [cellAt, tool]);
+
+  // onBlur is the single source of truth for ending text entry. Enter/Escape just blur
+  // the input (setting intent), so the unmount can't re-fire a second commit.
+  const onTextBlur = useCallback(() => {
+    const intent = textIntentRef.current;
+    textIntentRef.current = null;
+    if (intent !== "cancel" && textDraft && textDraft.value.trim()) {
+      onAddShape({ id: shapeId(), type: "text", x: textDraft.col * ASCII_W, y: textDraft.row * ASCII_H, text: textDraft.value, color, strokeWidth });
+    }
+    setTextDraft(null);
+  }, [color, onAddShape, strokeWidth, textDraft]);
 
   const onPointerMove = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
     if (moveStartRef.current) {
@@ -240,7 +263,24 @@ export function GridMode(props: GridModeProps) {
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerCancel}
+          onClick={onClick}
         />
+        {textDraft && (
+          <input
+            autoFocus
+            ref={textInputRef}
+            aria-label="Grid text"
+            className="gridTextInput"
+            value={textDraft.value}
+            onChange={(event) => { const value = event.target.value; setTextDraft((current) => current ? { ...current, value } : current); }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") { event.preventDefault(); textIntentRef.current = "commit"; textInputRef.current?.blur(); }
+              else if (event.key === "Escape") { event.preventDefault(); textIntentRef.current = "cancel"; textInputRef.current?.blur(); }
+            }}
+            onBlur={onTextBlur}
+            style={{ left: textDraft.col * CELL_W, top: RULER + textDraft.row * CELL_H, height: CELL_H }}
+          />
+        )}
       </div>
     </section>
   );

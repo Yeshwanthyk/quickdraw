@@ -493,6 +493,41 @@ async function smokeGridEdit(browser: Awaited<ReturnType<typeof chromium.launch>
   }
 }
 
+async function smokeGridText(browser: Awaited<ReturnType<typeof chromium.launch>>) {
+  const session = await startQuickPaintServer({ kind: "blank" }, { open: false });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1200, height: 800 } });
+    await page.goto(session.url);
+    await page.getByRole("button", { name: "Grid mode (ASCII)" }).click();
+    await page.getByRole("button", { name: "Text (6)" }).click();
+    const box = await page.locator(".gridCanvas").boundingBox();
+    if (!box) throw new Error("missing grid canvas");
+    // Escape must cancel without committing.
+    await page.mouse.click(box.x + 5 * 12, box.y + 22 + 2 * 22);
+    await page.getByRole("textbox", { name: "Grid text" }).fill("discard");
+    await page.keyboard.press("Escape");
+    // Enter commits at the clicked cell.
+    await page.mouse.click(box.x + 10 * 12, box.y + 22 + 4 * 22);
+    await page.getByRole("textbox", { name: "Grid text" }).fill("hello");
+    await page.keyboard.press("Enter");
+    await page.getByRole("button", { name: "Paint mode" }).click();
+    await page.getByRole("button", { name: "Save" }).click();
+    const result = await session.result;
+    verifyResult(result);
+    const scene = normalizeScene(extractSceneMetadata(readFileSync(result.path)));
+    const texts = scene.shapes.filter((shape) => shape.type === "text");
+    const text = texts[0];
+    // cell (10,4) -> x 80, y 64; Escape draft must not have committed.
+    if (texts.length !== 1 || !text || text.type !== "text" || text.text !== "hello" || text.x !== 80 || text.y !== 64) {
+      throw new Error(`grid text tool (escape-cancel / enter-commit) wrong: ${JSON.stringify(texts)}`);
+    }
+    await page.close();
+    return result;
+  } finally {
+    session.stop();
+  }
+}
+
 async function smokeGridCopyAscii(browser: Awaited<ReturnType<typeof chromium.launch>>) {
   const spec: SceneSpec = { canvas: { width: 320, height: 160 }, shapes: [{ type: "rect", x: 24, y: 24, width: 96, height: 64, color: "blue", label: "API" }] };
   const session = await startQuickPaintServer({ kind: "blank", scene: spec }, { open: false });
@@ -912,6 +947,7 @@ async function main() {
     const arrowBindingResult = await smokeArrowBinding(browser);
     const gridDrawResult = await smokeGridDraw(browser);
     const gridEditResult = await smokeGridEdit(browser);
+    const gridTextResult = await smokeGridText(browser);
     await smokeGridCopyAscii(browser);
     const rotatedTextResult = await smokeRotatedTextEdit(browser);
     const rotatedParityResult = await smokeRotatedTextParity(browser);
@@ -941,7 +977,7 @@ async function main() {
     const reopenedResult = await drawAndSaveViaCli(browser, ["open", "--spec", inspectedPath, cliEditResult.path], { expectedSourceKind: "image" });
     verifySceneMetadata(reopenedResult.path, cliOpenSpec, 0, { width: cliEditResult.width, height: cliEditResult.height });
 
-    console.log(JSON.stringify({ blank: blankResult, clipboardPath: clipPath, edit: editResult, text: textResult, activeText: activeTextResult, selection: selectionResult, multiSelect: multiSelectResult, preciseLineHit: preciseLineHitResult, zOrder: zOrderResult, arrowEndpoint: arrowEndpointResult, arrowBinding: arrowBindingResult, gridDraw: gridDrawResult, gridEdit: gridEditResult, rotatedText: rotatedTextResult, rotatedParity: rotatedParityResult, wrappedText: wrappedTextResult, imageDeselect: imageDeselectResult, scene: sceneResult, cliOpen: cliOpenResult, cliEdit: cliEditResult, reopened: reopenedResult }, null, 2));
+    console.log(JSON.stringify({ blank: blankResult, clipboardPath: clipPath, edit: editResult, text: textResult, activeText: activeTextResult, selection: selectionResult, multiSelect: multiSelectResult, preciseLineHit: preciseLineHitResult, zOrder: zOrderResult, arrowEndpoint: arrowEndpointResult, arrowBinding: arrowBindingResult, gridDraw: gridDrawResult, gridEdit: gridEditResult, gridText: gridTextResult, rotatedText: rotatedTextResult, rotatedParity: rotatedParityResult, wrappedText: wrappedTextResult, imageDeselect: imageDeselectResult, scene: sceneResult, cliOpen: cliOpenResult, cliEdit: cliEditResult, reopened: reopenedResult }, null, 2));
   } finally {
     await browser.close();
   }

@@ -280,3 +280,20 @@ select {
   font-size: 11px;
   color: #6b7280;
 }
+
+/* Grid-mode inline text entry. */
+.gridTextInput {
+  position: absolute;
+  margin: 0;
+  padding: 0 2px;
+  min-width: 60px;
+  border: 1px solid #2563eb;
+  border-radius: 3px;
+  background: #0f1115;
+  color: #e8eaed;
+  font-family: "JetBrains Mono", Menlo, Consolas, monospace;
+  font-size: 20px;
+  line-height: 1;
+  outline: none;
+  z-index: 2;
+}
