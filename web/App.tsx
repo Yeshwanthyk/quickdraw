@@ -192,6 +192,8 @@ export default function App() {
   const stageRef = useRef<Konva.Stage>(null);
   const rafRef = useRef<number | null>(null);
   const draftRef = useRef<Shape | null>(null);
+  const previewRafRef = useRef<number | null>(null);
+  const previewRef = useRef<TransformPreview | null>(null);
 
   const shapes = history.present;
   const canUndo = history.past.length > 0;
@@ -293,6 +295,29 @@ export default function App() {
   const undo = useCallback(() => setHistory(undoHistory), []);
   const redo = useCallback(() => setHistory(redoHistory), []);
 
+  // Coalesce high-frequency transform previews (move/resize/rotate/arrow-point) into one
+  // paint per frame, mirroring the pen-draw rAF throttle above.
+  const scheduleTransformPreview = useCallback((next: TransformPreview) => {
+    previewRef.current = next;
+    if (previewRafRef.current !== null) return;
+    previewRafRef.current = window.requestAnimationFrame(() => {
+      previewRafRef.current = null;
+      setTransformPreview(previewRef.current);
+    });
+  }, []);
+
+  const clearTransformPreview = useCallback(() => {
+    if (previewRafRef.current !== null) window.cancelAnimationFrame(previewRafRef.current);
+    previewRafRef.current = null;
+    previewRef.current = null;
+    setTransformPreview(null);
+  }, []);
+
+  useEffect(() => () => {
+    if (rafRef.current !== null) window.cancelAnimationFrame(rafRef.current);
+    if (previewRafRef.current !== null) window.cancelAnimationFrame(previewRafRef.current);
+  }, []);
+
   const updateFontSize = useCallback((next: number) => {
     setFontSize(next);
     setTextDraft((current) => current ? { ...current, fontSize: next } : current);
@@ -380,8 +405,8 @@ export default function App() {
     const from = shapeBounds(shape);
     const to = resizeBounds(from, handle, point, keepAspect);
     setHistory((current) => pushHistory(current, current.present.map((item) => item.id === id ? resizeShape(item, from, to) : item)));
-    setTransformPreview(null);
-  }, [selectedIds, shapes]);
+    clearTransformPreview();
+  }, [clearTransformPreview, selectedIds, shapes]);
 
   const previewResizeSelected = useCallback((handle: ResizeHandle, point: { x: number; y: number }, keepAspect: boolean) => {
     if (selectedIds.length !== 1) return;
@@ -389,8 +414,8 @@ export default function App() {
     const shape = shapes.find((item) => item.id === id);
     if (!shape) return;
     const from = shapeBounds(shape);
-    setTransformPreview({ kind: "resize", id, from, to: resizeBounds(from, handle, point, keepAspect) });
-  }, [selectedIds, shapes]);
+    scheduleTransformPreview({ kind: "resize", id, from, to: resizeBounds(from, handle, point, keepAspect) });
+  }, [scheduleTransformPreview, selectedIds, shapes]);
 
   const rotateSelected = useCallback((point: { x: number; y: number }) => {
     if (selectedIds.length !== 1) return;
@@ -401,8 +426,8 @@ export default function App() {
     const center = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
     const angle = Math.atan2(point.y - center.y, point.x - center.x) * 180 / Math.PI + 90;
     setHistory((current) => pushHistory(current, current.present.map((item) => item.id === id ? rotateShape(item, angle) : item)));
-    setTransformPreview(null);
-  }, [selectedIds, shapes]);
+    clearTransformPreview();
+  }, [clearTransformPreview, selectedIds, shapes]);
 
   const previewRotateSelected = useCallback((point: { x: number; y: number }) => {
     if (selectedIds.length !== 1) return;
@@ -411,8 +436,8 @@ export default function App() {
     if (!shape || shape.type === "pen" || shape.type === "arrow") return;
     const bounds = shapeBounds(shape);
     const center = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
-    setTransformPreview({ kind: "rotate", id, angle: Math.atan2(point.y - center.y, point.x - center.x) * 180 / Math.PI + 90 });
-  }, [selectedIds, shapes]);
+    scheduleTransformPreview({ kind: "rotate", id, angle: Math.atan2(point.y - center.y, point.x - center.x) * 180 / Math.PI + 90 });
+  }, [scheduleTransformPreview, selectedIds, shapes]);
 
   const updateSelectedArrowPoint = useCallback((pointIndex: number, point: { x: number; y: number }) => {
     if (selectedIds.length !== 1) return;
@@ -420,16 +445,16 @@ export default function App() {
     setHistory((current) => pushHistory(current, current.present.map((shape) => (
       shape.id === id && shape.type === "arrow" ? updateArrowPoint(shape, pointIndex, point) : shape
     ))));
-    setTransformPreview(null);
-  }, [selectedIds]);
+    clearTransformPreview();
+  }, [clearTransformPreview, selectedIds]);
 
   const previewSelectedArrowPoint = useCallback((pointIndex: number, point: { x: number; y: number }) => {
     if (selectedIds.length !== 1) return;
     const id = selectedIds[0];
     const shape = shapes.find((item) => item.id === id);
     if (!shape || shape.type !== "arrow") return;
-    setTransformPreview({ kind: "arrow-points", id, points: updateArrowPoint(shape, pointIndex, point).points });
-  }, [selectedIds, shapes]);
+    scheduleTransformPreview({ kind: "arrow-points", id, points: updateArrowPoint(shape, pointIndex, point).points });
+  }, [scheduleTransformPreview, selectedIds, shapes]);
 
   const done = useCallback(async () => {
     const stage = stageRef.current;
@@ -669,12 +694,12 @@ export default function App() {
                   onDragEnd={(event) => {
                     const { x, y } = event.target.position();
                     event.target.position({ x: 0, y: 0 });
-                    setTransformPreview(null);
+                    clearTransformPreview();
                     moveShapes(selectedIds.includes(shape.id) ? selectedIds : [shape.id], x, y);
                   }}
                   onDragMove={(event) => {
                     const { x, y } = event.target.position();
-                    setTransformPreview({ kind: "move", ids: selectedIds.includes(shape.id) ? selectedIds : [shape.id], dx: x, dy: y });
+                    scheduleTransformPreview({ kind: "move", ids: selectedIds.includes(shape.id) ? selectedIds : [shape.id], dx: x, dy: y });
                   }}
                   onMouseDown={(event) => {
                     if (tool !== "select") return;
