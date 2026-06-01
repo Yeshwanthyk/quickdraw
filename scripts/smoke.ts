@@ -5,7 +5,7 @@ import { chromium, type Locator, type Page } from "@playwright/test";
 import { readClipboardImage } from "../src/clipboard";
 import { extractSceneMetadata } from "../src/png-metadata";
 import { startQuickPaintServer, type QuickPaintResult } from "../src/server";
-import { normalizeScene, type SceneSpec } from "../src/spec";
+import { normalizeScene, type SceneRectSpec, type SceneSpec } from "../src/spec";
 import { layoutText } from "../src/text-layout";
 
 declare global {
@@ -757,8 +757,53 @@ async function smokeCliRenderInspect() {
   await expectCliRejects(["open", "--spec", malformedSpecPath, "--json"], "shape 0 must include a type");
 }
 
+async function smokeAsciiRender() {
+  const dir = mkdtempSync(join(tmpdir(), "quick-paint-ascii-"));
+  const ascii = (spec: SceneSpec) => runCli(["render", "--spec", "-", "--ascii"], JSON.stringify(spec));
+  const hasGlyphs = (text: string, glyphs: string[], label: string) => {
+    for (const glyph of glyphs) if (!text.includes(glyph)) throw new Error(`${label} missing ${glyph}:\n${text}`);
+  };
+  const box = (extra: Partial<SceneRectSpec>): SceneSpec => ({
+    canvas: { width: 176, height: 110 },
+    shapes: [{ type: "rect", x: 16, y: 16, width: 128, height: 64, color: "blue", ...extra }]
+  });
+
+  hasGlyphs(ascii(box({})), ["┌", "┐", "└", "┘", "─", "│"], "single box");
+  hasGlyphs(ascii(box({ strokeStyle: "bold" })), ["┏", "┓", "┗", "┛", "━", "┃"], "bold box");
+  hasGlyphs(ascii(box({ strokeStyle: "double" })), ["╔", "╗", "╚", "╝", "═", "║"], "double box");
+  hasGlyphs(ascii(box({ rounded: true })), ["╭", "╮", "╰", "╯"], "rounded box");
+
+  const crossing = ascii({
+    canvas: { width: 240, height: 200 },
+    shapes: [
+      { type: "arrow", from: [24, 96], to: [216, 96], color: "dark" },
+      { type: "arrow", from: [120, 24], to: [120, 176], color: "red" }
+    ]
+  });
+  hasGlyphs(crossing, ["┼", "▶", "▼"], "crossing arrows");
+
+  const dashed = ascii(box({ dashed: true }));
+  if (!dashed.includes("─ ─")) throw new Error(`dashed rect did not gap its border:\n${dashed}`);
+
+  // ASCII PNG round-trips the scene (incl. the new strokeStyle field) through metadata.
+  const spec: SceneSpec = { canvas: { width: 200, height: 120 }, shapes: [{ type: "rect", x: 20, y: 20, width: 120, height: 60, color: "blue", label: "hi", strokeStyle: "double" }] };
+  const pngPath = join(dir, "ascii.png");
+  const pngResult = JSON.parse(runCli(["render", "--spec", "-", "--ascii", "--out", pngPath, "--json"], JSON.stringify(spec))) as QuickPaintResult;
+  verifyResult(pngResult);
+  const meta = normalizeScene(JSON.parse(runCli(["inspect", pngPath, "--json"])));
+  const rect = meta.shapes.find((shape) => shape.type === "rect");
+  if (!rect || rect.type !== "rect" || rect.strokeStyle !== "double") {
+    throw new Error(`ascii PNG metadata lost strokeStyle: ${JSON.stringify(rect)}`);
+  }
+
+  const dotPath = join(dir, "graph.dot");
+  writeFileSync(dotPath, "digraph { A -> B }");
+  await expectCliRejects(["render", "--dot", dotPath, "--ascii", "--out", join(dir, "x.png")], "--ascii requires --spec");
+}
+
 async function main() {
   await smokeCliRenderInspect();
+  await smokeAsciiRender();
 
   const browser = await chromium.launch({ channel: "chrome", headless: true });
   try {

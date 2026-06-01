@@ -68,6 +68,8 @@ ln -sfn ~/.gitgud/skills/quick-paint ~/.pi/agent/skills/quick-paint
 ```bash
 quick-paint render --spec scene.json --out /tmp/diagram.png
 echo '{"shapes":[...]}' | quick-paint render --spec - --out /tmp/diagram.png --json
+echo '{"shapes":[...]}' | quick-paint render --spec - --ascii            # box-drawing text to stdout
+quick-paint render --spec scene.json --ascii --out /tmp/diagram.txt      # or a monospace .png
 echo 'graph LR; A-->B' | quick-paint render --mermaid - --out /tmp/flow.png --json
 echo 'digraph { A -> B }' | quick-paint render --dot - --out /tmp/graph.png --json
 quick-paint inspect /tmp/diagram.png --json
@@ -96,6 +98,10 @@ Minimal scene spec:
 ```
 
 Supported shapes: `rect`, `redact`, `arrow`, `text`, `pen`, `highlight`. Text supports optional `width`, `lineHeight`, `fontSize`, `fontFamily`, and `textAlign`; fixed-width text wraps. Named colors: `red`, `orange`, `yellow`, `green`, `blue`, `dark`, `black`, `white`.
+
+Arrows can bind to a shape: set `startBinding`/`endBinding` to `{ "shapeId": "...", "ratio": [0..1, 0..1] }` and that endpoint re-routes when the shape moves or resizes. In the browser, drawing an arrow ending inside a shape binds it automatically.
+
+ASCII rendering (`--ascii`) draws the scene with box-drawing characters and resolves line overlaps into junctions (`├ ┼ ┤ ┬ ┴`). `rect`/`arrow` accept `strokeStyle: "single" | "bold" | "double"` and `dashed: true`; `rect` also accepts `rounded: true`. These style fields only affect ASCII output and are ignored by the pixel/PNG renderers. `--ascii` writes text to stdout or `--out file.txt`, or a monospace PNG when `--out` ends in `.png`.
 
 Adapter renders:
 - `--mermaid` uses `mmdc` when installed, otherwise `bunx @mermaid-js/mermaid-cli`.
