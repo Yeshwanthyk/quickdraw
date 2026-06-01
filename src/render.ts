@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { embedSceneMetadata } from "./png-metadata";
-import { normalizeScene, type NormalizedScene, type Shape } from "./spec";
+import { normalizeScene, resolveArrowPoints, type NormalizedScene, type Shape } from "./spec";
 import { copyImageToClipboard } from "./clipboard";
 import { layoutText } from "./text-layout";
 import type { QuickPaintResult } from "./server";
@@ -59,11 +59,12 @@ export function renderSvgToPng(svgPath: string, outPath: string) {
 
 function sceneToSvg(scene: NormalizedScene): string {
   const { width, height, background } = scene.canvas;
+  const byId = new Map(scene.shapes.map((shape) => [shape.id, shape]));
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
     `<defs><marker id="arrowhead" markerWidth="12" markerHeight="10" refX="10" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="context-stroke"/></marker></defs>`,
     `<rect width="100%" height="100%" fill="${escapeAttr(background ?? "#ffffff")}"/>`,
-    ...scene.shapes.map(shapeToSvg),
+    ...scene.shapes.map((shape) => shapeToSvg(shape.type === "arrow" ? { ...shape, points: resolveArrowPoints(shape, byId) } : shape)),
     `</svg>`
   ].join("");
 }

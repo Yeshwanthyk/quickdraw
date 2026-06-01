@@ -423,6 +423,62 @@ async function smokeArrowEndpointEditor(browser: Awaited<ReturnType<typeof chrom
   }
 }
 
+async function smokeArrowBinding(browser: Awaited<ReturnType<typeof chromium.launch>>) {
+  const spec: SceneSpec = {
+    canvas: { width: 380, height: 240 },
+    shapes: [
+      { id: "box", type: "rect", x: 140, y: 70, width: 90, height: 70, color: "blue", label: "Bind" }
+    ]
+  };
+  const session = await startQuickPaintServer({ kind: "blank", scene: spec }, { open: false });
+  try {
+    const page = await browser.newPage({ viewport: { width: 820, height: 560 } });
+    await page.goto(session.url);
+    const stage = page.locator(".stage canvas").first();
+    const stageBox = await stage.boundingBox();
+    if (!stageBox) throw new Error("missing arrow binding stage");
+
+    // Draw an arrow whose end lands at the rect center (185,105) → end binds to the rect.
+    await page.getByRole("button", { name: "Arrow (4)" }).click();
+    await page.mouse.move(stageBox.x + 50, stageBox.y + 200);
+    await page.mouse.down();
+    await page.mouse.move(stageBox.x + 120, stageBox.y + 150);
+    await page.mouse.move(stageBox.x + 185, stageBox.y + 105);
+    await page.mouse.up();
+
+    // Select the rect (corner clear of the arrow) and nudge it +25,+25.
+    await page.getByRole("button", { name: "Select (1)" }).click();
+    await clickStage(page, stage, 218, 130);
+    for (let step = 0; step < 5; step += 1) await page.keyboard.press("Shift+ArrowRight");
+    for (let step = 0; step < 5; step += 1) await page.keyboard.press("Shift+ArrowDown");
+
+    await page.getByRole("button", { name: "Save" }).click();
+    const result = await session.result;
+    verifyResult(result);
+    const scene = normalizeScene(extractSceneMetadata(readFileSync(result.path)));
+    const arrow = scene.shapes.find((shape) => shape.type === "arrow");
+    if (!arrow || arrow.type !== "arrow") throw new Error("arrow binding smoke lost arrow");
+    if (arrow.endBinding?.shapeId !== "box") {
+      throw new Error(`arrow end did not bind to rect on draw: ${JSON.stringify(arrow)}`);
+    }
+    if (arrow.startBinding) {
+      throw new Error(`free arrow start should not bind: ${JSON.stringify(arrow.startBinding)}`);
+    }
+    const [x1, y1, x2, y2] = arrow.points;
+    // Rect moved +25,+25 → new center ~ (210,130); the bound end must follow it.
+    if (Math.abs(x2 - 210) > 12 || Math.abs(y2 - 130) > 12) {
+      throw new Error(`bound arrow end did not follow moved rect: ${JSON.stringify(arrow.points)}`);
+    }
+    if (Math.abs(x1 - 50) > 6 || Math.abs(y1 - 200) > 6) {
+      throw new Error(`free arrow start drifted: ${JSON.stringify(arrow.points)}`);
+    }
+    await page.close();
+    return result;
+  } finally {
+    session.stop();
+  }
+}
+
 async function smokeRotatedTextEdit(browser: Awaited<ReturnType<typeof chromium.launch>>) {
   const spec: SceneSpec = {
     canvas: { width: 420, height: 260 },
@@ -659,6 +715,22 @@ async function smokeCliRenderInspect() {
     throw new Error("inspect did not return embedded scene");
   }
 
+  // Arrow connector: an end binding must survive render → embed → inspect round-trip.
+  const bindingSpec: SceneSpec = {
+    canvas: { width: 300, height: 200 },
+    shapes: [
+      { id: "box", type: "rect", x: 120, y: 70, width: 90, height: 70, color: "blue" },
+      { id: "wire", type: "arrow", from: [40, 180], to: [165, 105], color: "red", endBinding: { shapeId: "box", ratio: [0.5, 0.5] } }
+    ]
+  };
+  const bindingPath = join(dir, "binding.png");
+  runCli(["render", "--spec", "-", "--out", bindingPath, "--json"], JSON.stringify(bindingSpec));
+  const bindingMeta = normalizeScene(JSON.parse(runCli(["inspect", bindingPath, "--json"])));
+  const boundArrow = bindingMeta.shapes.find((shape) => shape.id === "wire");
+  if (!boundArrow || boundArrow.type !== "arrow" || boundArrow.endBinding?.shapeId !== "box") {
+    throw new Error(`arrow binding did not round-trip through PNG metadata: ${JSON.stringify(boundArrow)}`);
+  }
+
   const dot = "digraph { A -> B; B -> C }";
   const dotPath = join(dir, "dot.png");
   const dotResult = JSON.parse(runCli(["render", "--dot", "-", "--out", dotPath, "--json"], dot)) as QuickPaintResult;
@@ -702,6 +774,7 @@ async function main() {
     const preciseLineHitResult = await smokePreciseLineHit(browser);
     const zOrderResult = await smokeZOrder(browser);
     const arrowEndpointResult = await smokeArrowEndpointEditor(browser);
+    const arrowBindingResult = await smokeArrowBinding(browser);
     const rotatedTextResult = await smokeRotatedTextEdit(browser);
     const rotatedParityResult = await smokeRotatedTextParity(browser);
     const wrappedTextResult = await smokeWrappedText(browser);
@@ -730,7 +803,7 @@ async function main() {
     const reopenedResult = await drawAndSaveViaCli(browser, ["open", "--spec", inspectedPath, cliEditResult.path], { expectedSourceKind: "image" });
     verifySceneMetadata(reopenedResult.path, cliOpenSpec, 0, { width: cliEditResult.width, height: cliEditResult.height });
 
-    console.log(JSON.stringify({ blank: blankResult, clipboardPath: clipPath, edit: editResult, text: textResult, activeText: activeTextResult, selection: selectionResult, multiSelect: multiSelectResult, preciseLineHit: preciseLineHitResult, zOrder: zOrderResult, arrowEndpoint: arrowEndpointResult, rotatedText: rotatedTextResult, rotatedParity: rotatedParityResult, wrappedText: wrappedTextResult, imageDeselect: imageDeselectResult, scene: sceneResult, cliOpen: cliOpenResult, cliEdit: cliEditResult, reopened: reopenedResult }, null, 2));
+    console.log(JSON.stringify({ blank: blankResult, clipboardPath: clipPath, edit: editResult, text: textResult, activeText: activeTextResult, selection: selectionResult, multiSelect: multiSelectResult, preciseLineHit: preciseLineHitResult, zOrder: zOrderResult, arrowEndpoint: arrowEndpointResult, arrowBinding: arrowBindingResult, rotatedText: rotatedTextResult, rotatedParity: rotatedParityResult, wrappedText: wrappedTextResult, imageDeselect: imageDeselectResult, scene: sceneResult, cliOpen: cliOpenResult, cliEdit: cliEditResult, reopened: reopenedResult }, null, 2));
   } finally {
     await browser.close();
   }

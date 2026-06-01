@@ -5,7 +5,7 @@ import type Konva from "konva";
 import { createHistory, pushHistory, redoHistory, undoHistory } from "./canvas/history";
 import { TextEditor, type TextDraft } from "./canvas/TextEditor";
 import { useImageSource } from "./canvas/useImageSource";
-import { normalizeScene, sceneFromShapes } from "../src/spec";
+import { bindingFor, normalizeScene, reflowBoundArrows, sceneFromShapes } from "../src/spec";
 import { layoutText } from "../src/text-layout";
 import type { DrawColor, Shape, TextShape, Tool } from "./tools/types";
 
@@ -216,8 +216,16 @@ export default function App() {
   }, []);
 
   const commit = useCallback((shape: Shape) => {
-    const finalShape = shape.type === "rect" ? normalizeRect(shape) : shape;
-    setHistory((current) => pushHistory(current, [...current.present, finalShape]));
+    setHistory((current) => {
+      let finalShape: Shape = shape.type === "rect" ? normalizeRect(shape) : shape;
+      if (finalShape.type === "arrow") {
+        const points = finalShape.points;
+        const startBinding = bindingFor([points[0], points[1]], current.present);
+        const endBinding = bindingFor([points[points.length - 2], points[points.length - 1]], current.present);
+        finalShape = { ...finalShape, ...(startBinding ? { startBinding } : {}), ...(endBinding ? { endBinding } : {}) };
+      }
+      return pushHistory(current, [...current.present, finalShape]);
+    });
   }, []);
 
   const onPointerDown = useCallback((event: Konva.KonvaEventObject<PointerEvent>) => {
@@ -394,7 +402,11 @@ export default function App() {
   const moveShapes = useCallback((ids: string[], dx: number, dy: number) => {
     if (dx === 0 && dy === 0) return;
     const selected = new Set(ids);
-    setHistory((current) => pushHistory(current, current.present.map((shape) => selected.has(shape.id) ? translateShape(shape, dx, dy) : shape)));
+    // Reflow arrows whose target moved; arrows in the moved set already translate with it.
+    setHistory((current) => pushHistory(current, reflowBoundArrows(
+      current.present.map((shape) => selected.has(shape.id) ? translateShape(shape, dx, dy) : shape),
+      selected
+    )));
   }, []);
 
   const resizeSelected = useCallback((handle: ResizeHandle, point: { x: number; y: number }, keepAspect: boolean) => {
@@ -404,7 +416,7 @@ export default function App() {
     if (!shape) return;
     const from = shapeBounds(shape);
     const to = resizeBounds(from, handle, point, keepAspect);
-    setHistory((current) => pushHistory(current, current.present.map((item) => item.id === id ? resizeShape(item, from, to) : item)));
+    setHistory((current) => pushHistory(current, reflowBoundArrows(current.present.map((item) => item.id === id ? resizeShape(item, from, to) : item))));
     clearTransformPreview();
   }, [clearTransformPreview, selectedIds, shapes]);
 
@@ -442,9 +454,17 @@ export default function App() {
   const updateSelectedArrowPoint = useCallback((pointIndex: number, point: { x: number; y: number }) => {
     if (selectedIds.length !== 1) return;
     const id = selectedIds[0];
-    setHistory((current) => pushHistory(current, current.present.map((shape) => (
-      shape.id === id && shape.type === "arrow" ? updateArrowPoint(shape, pointIndex, point) : shape
-    ))));
+    setHistory((current) => pushHistory(current, current.present.map((shape) => {
+      if (shape.id !== id || shape.type !== "arrow") return shape;
+      const updated = updateArrowPoint(shape, pointIndex, point);
+      // Only the true endpoints carry bindings; a middle control point leaves both intact.
+      const isStart = pointIndex === 0;
+      const isEnd = pointIndex === shape.points.length / 2 - 1;
+      if (!isStart && !isEnd) return updated;
+      // Dropping an endpoint on a shape (re)binds it; dropping in empty space clears it.
+      const binding = bindingFor([point.x, point.y], current.present.filter((item) => item.id !== id));
+      return { ...updated, startBinding: isStart ? binding : updated.startBinding, endBinding: isEnd ? binding : updated.endBinding };
+    })));
     clearTransformPreview();
   }, [clearTransformPreview, selectedIds]);
 
