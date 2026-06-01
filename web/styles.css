@@ -204,3 +204,79 @@ select {
   overflow-wrap: break-word;
   white-space: pre-wrap;
 }
+
+/* Grid-mode Appearance panel (dark, matches the grid canvas). */
+.appearancePanel {
+  position: fixed;
+  top: 64px;
+  right: 16px;
+  width: 232px;
+  padding: 16px;
+  border-radius: 10px;
+  background: #1b1e25;
+  border: 1px solid #2b2f37;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+  color: #d7dae0;
+  z-index: 20;
+}
+
+.appearanceTitle {
+  margin: 0 0 12px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8a909b;
+}
+
+.appearanceGroup {
+  margin-bottom: 14px;
+}
+
+.appearanceLabel {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: #aeb4bf;
+}
+
+.appearanceRow {
+  display: flex;
+  gap: 6px;
+}
+
+.glyphButton {
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  border: 1px solid #353a44;
+  background: #23272f;
+  color: #e8eaed;
+  font-family: "JetBrains Mono", Menlo, Consolas, monospace;
+  font-size: 17px;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease, scale 120ms ease;
+}
+
+.glyphButton:hover {
+  background: #2b303a;
+}
+
+.glyphButton:active {
+  scale: 0.96;
+}
+
+.glyphButton.active {
+  border-color: #2563eb;
+  background: #1f2c46;
+  color: #ffffff;
+}
+
+.appearanceHint {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: #6b7280;
+}

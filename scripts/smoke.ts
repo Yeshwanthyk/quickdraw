@@ -429,6 +429,9 @@ async function smokeGridDraw(browser: Awaited<ReturnType<typeof chromium.launch>
     const page = await browser.newPage({ viewport: { width: 1400, height: 1000 } });
     await page.goto(session.url);
     await page.getByRole("button", { name: "Grid mode (ASCII)" }).click();
+    // Appearance panel: pick double border + dense fill, applied to the next shape.
+    await page.getByRole("button", { name: "Double", exact: true }).click();
+    await page.getByRole("button", { name: "Dense", exact: true }).click();
     await page.getByRole("button", { name: "Rectangle (5)" }).click();
     const canvas = page.locator(".gridCanvas");
     const box = await canvas.boundingBox();
@@ -444,9 +447,12 @@ async function smokeGridDraw(browser: Awaited<ReturnType<typeof chromium.launch>
     verifyResult(result);
     const scene = normalizeScene(extractSceneMetadata(readFileSync(result.path)));
     const rect = scene.shapes.find((shape) => shape.type === "rect");
-    // cells -> scene px via 8x16: x=5*8, y=3*16, w=10*8, h=5*16.
+    // cells -> scene px via 8x16: x=5*8, y=3*16, w=10*8, h=5*16; plus panel styles.
     if (!rect || rect.type !== "rect" || rect.x !== 40 || rect.y !== 48 || rect.width !== 80 || rect.height !== 80) {
       throw new Error(`grid draw did not snap rect to cells: ${JSON.stringify(rect)}`);
+    }
+    if (rect.strokeStyle !== "double" || rect.fillStyle !== "dense") {
+      throw new Error(`appearance panel style not applied to grid shape: ${JSON.stringify(rect)}`);
     }
     await page.close();
     return result;

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { sceneToAscii } from "../../src/ascii";
 import type { DrawColor, Shape, Tool } from "../tools/types";
+import type { GridStyle } from "./AppearancePanel";
 
 // Logical ASCII cell (matches sceneToAscii defaults): 1 char = 8x16 scene px.
 const ASCII_W = 8;
@@ -19,6 +20,7 @@ type GridModeProps = {
   tool: Tool;
   color: DrawColor;
   strokeWidth: number;
+  style: GridStyle;
   onAddShape: (shape: Shape) => void;
 };
 
@@ -29,7 +31,7 @@ function shapeId() {
 }
 
 export function GridMode(props: GridModeProps) {
-  const { canvasSize, shapes, tool, color, strokeWidth, onAddShape } = props;
+  const { canvasSize, shapes, tool, color, strokeWidth, style, onAddShape } = props;
   const cols = Math.max(1, Math.floor(canvasSize.width / ASCII_W));
   const rows = Math.max(1, Math.floor(canvasSize.height / ASCII_H));
   const width = cols * CELL_W;
@@ -55,14 +57,28 @@ export function GridMode(props: GridModeProps) {
       const w = Math.abs(end.col - start.col) * ASCII_W;
       const h = Math.abs(end.row - start.row) * ASCII_H;
       if (w === 0 || h === 0) return null;
-      return { id: shapeId(), type: "rect", x, y, width: w, height: h, color: tool === "redact" ? "#111827" : color, strokeWidth, fill: tool === "redact" ? "#111827" : undefined };
+      // Redact stays an opaque solid block; it ignores the appearance panel.
+      if (tool === "redact") return { id: shapeId(), type: "rect", x, y, width: w, height: h, color: "#111827", strokeWidth, fill: "#111827" };
+      return {
+        id: shapeId(), type: "rect", x, y, width: w, height: h, color, strokeWidth,
+        ...(style.border !== "single" ? { strokeStyle: style.border } : {}),
+        ...(style.fill !== "none" ? { fillStyle: style.fill } : {}),
+        ...(style.rounded ? { rounded: true } : {}),
+        ...(style.dashed ? { dashed: true } : {})
+      };
     }
     if (tool === "arrow") {
       if (start.col === end.col && start.row === end.row) return null;
-      return { id: shapeId(), type: "arrow", points: [start.col * ASCII_W, start.row * ASCII_H, end.col * ASCII_W, end.row * ASCII_H], color, strokeWidth };
+      // "none"/"single" both map to the renderer's default arrow weight (a borderless
+      // arrow is not meaningful); only bold/double change it.
+      return {
+        id: shapeId(), type: "arrow", points: [start.col * ASCII_W, start.row * ASCII_H, end.col * ASCII_W, end.row * ASCII_H], color, strokeWidth,
+        ...(style.border === "bold" || style.border === "double" ? { strokeStyle: style.border } : {}),
+        ...(style.dashed ? { dashed: true } : {})
+      };
     }
     return null;
-  }, [color, strokeWidth, tool]);
+  }, [color, strokeWidth, style, tool]);
 
   const onPointerDown = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
     if (tool !== "rect" && tool !== "redact" && tool !== "arrow") return;

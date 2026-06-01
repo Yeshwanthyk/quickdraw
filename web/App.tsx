@@ -5,6 +5,7 @@ import type Konva from "konva";
 import { createHistory, pushHistory, redoHistory, undoHistory } from "./canvas/history";
 import { TextEditor, type TextDraft } from "./canvas/TextEditor";
 import { GridMode } from "./grid/GridMode";
+import { AppearancePanel, defaultGridStyle, type GridStyle } from "./grid/AppearancePanel";
 import { useImageSource } from "./canvas/useImageSource";
 import { bindingFor, normalizeScene, reflowBoundArrows, sceneFromShapes } from "../src/spec";
 import { layoutText } from "../src/text-layout";
@@ -178,6 +179,7 @@ export default function App() {
   const [canvasImage, setCanvasImage] = useState<HTMLImageElement | null>(null);
   const [canvasSize, setCanvasSize] = useState({ width: 960, height: 620 });
   const [mode, setMode] = useState<"paint" | "grid">("paint");
+  const [gridStyle, setGridStyle] = useState<GridStyle>(defaultGridStyle);
   const [tool, setTool] = useState<Tool>("select");
   const [color, setColor] = useState<DrawColor>("#e11d48");
   const [strokeWidth, setStrokeWidth] = useState(4);
@@ -667,7 +669,10 @@ export default function App() {
       </div>
 
       {mode === "grid" ? (
-        <GridMode canvasSize={canvasSize} shapes={shapes} tool={tool} color={color} strokeWidth={strokeWidth} onAddShape={commit} />
+        <>
+          <GridMode canvasSize={canvasSize} shapes={shapes} tool={tool} color={color} strokeWidth={strokeWidth} style={gridStyle} onAddShape={commit} />
+          <AppearancePanel style={gridStyle} onChange={setGridStyle} />
+        </>
       ) : (
       <section className="canvasRail">
         <div className="canvasFrame" style={{ width: canvasSize.width, height: canvasSize.height }}>
