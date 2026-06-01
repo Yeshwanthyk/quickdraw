@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { embedSceneMetadata } from "./png-metadata";
+import { sceneToAscii } from "./ascii";
 import { normalizeScene, resolveArrowPoints, type NormalizedScene, type Shape } from "./spec";
 import { copyImageToClipboard } from "./clipboard";
 import { layoutText } from "./text-layout";
@@ -40,6 +41,35 @@ export function renderSceneToPng(input: unknown, options: RenderOptions): QuickP
     height: scene.canvas.height,
     clipboard
   };
+}
+
+export function renderSceneToAscii(input: unknown): string {
+  return sceneToAscii(normalizeScene(input));
+}
+
+export function renderAsciiToPng(input: unknown, options: RenderOptions): QuickPaintResult {
+  const scene = normalizeScene(input);
+  const ascii = sceneToAscii(scene);
+  const tmp = mkdtempSync(join(tmpdir(), "quick-paint-ascii-"));
+  const svgPath = join(tmp, "ascii.svg");
+  try {
+    writeFileSync(svgPath, asciiToSvg(ascii));
+    mkdirSync(dirname(options.outPath), { recursive: true });
+    renderSvgToPng(svgPath, options.outPath);
+    writeFileSync(options.outPath, embedSceneMetadata(readFileSync(options.outPath), scene));
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+
+  let clipboard = false;
+  if (options.clipboard) {
+    try {
+      clipboard = copyImageToClipboard(options.outPath);
+    } catch {
+      clipboard = false;
+    }
+  }
+  return { path: options.outPath, mime: "image/png", width: scene.canvas.width, height: scene.canvas.height, clipboard };
 }
 
 export function renderSvgToPng(svgPath: string, outPath: string) {
@@ -108,6 +138,26 @@ function textLines(x: number, lines: string[], fontSize: number, lineHeight: num
     const dy = index === 0 ? 0 : fontSize * lineHeight;
     return `<tspan x="${x}" dy="${dy}">${escapeText(line)}</tspan>`;
   }).join("");
+}
+
+function asciiToSvg(text: string): string {
+  const fontSize = 15;
+  const cellWidth = fontSize * 0.6;
+  const lineHeight = fontSize * 1.2;
+  const pad = 12;
+  const lines = text.length ? text.split("\n") : [""];
+  const longest = lines.reduce((max, line) => Math.max(max, line.length), 0);
+  const width = Math.ceil(longest * cellWidth) + pad * 2;
+  const height = Math.ceil(lines.length * lineHeight) + pad * 2;
+  const tspans = lines
+    .map((line, index) => `<tspan x="${pad}" dy="${index === 0 ? 0 : lineHeight}">${escapeText(line)}</tspan>`)
+    .join("");
+  return [
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
+    `<rect width="100%" height="100%" fill="#ffffff"/>`,
+    `<text x="${pad}" y="${pad}" xml:space="preserve" dominant-baseline="hanging" font-family="JetBrains Mono, Menlo, Consolas, monospace" font-size="${fontSize}" fill="#111827">${tspans}</text>`,
+    `</svg>`
+  ].join("");
 }
 
 function escapeAttr(value: string) {

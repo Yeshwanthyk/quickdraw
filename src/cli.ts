@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { renderAdapterToPng, type RenderAdapter } from "./adapter-render";
 import { readClipboardImage } from "./clipboard";
 import { extractSceneMetadata } from "./png-metadata";
-import { renderSceneToPng } from "./render";
+import { renderAsciiToPng, renderSceneToAscii, renderSceneToPng } from "./render";
 import { startQuickPaintServer, type CliMode, type QuickPaintResult } from "./server";
 import { focusedAppBundleId, pasteTextIntoApp } from "./sinks";
 import { captureScreenshot } from "./screenshot";
@@ -21,6 +21,7 @@ type RenderOptions = {
   kind: "render";
   source: { kind: "spec"; value: unknown } | { kind: RenderAdapter; value: string };
   outPath: string;
+  ascii: boolean;
   json: boolean;
   paste: boolean;
 };
@@ -41,6 +42,7 @@ const usage = [
   "  quick-paint shot [--spec scene.json] [--json] [--paste]",
   "  quick-paint open [--spec scene.json] [image] [--json] [--paste]",
   "  quick-paint render --spec scene.json|- --out file.png [--json] [--paste]",
+  "  quick-paint render --spec scene.json|- --ascii [--out file.txt|file.png] [--json] [--paste]",
   "  quick-paint render --mermaid file.mmd|- --out file.png [--json] [--paste]",
   "  quick-paint render --dot graph.dot|- --out file.png [--json] [--paste]",
   "  quick-paint inspect <image.png> [--json]"
@@ -60,9 +62,11 @@ function parseArgs(argv: string[]): CliOptions {
   const command = args.shift();
   if (command === "render") {
     const source = readRenderSource(args);
-    const outPath = takeOption(args, "--out", true);
+    const ascii = takeFlag(args, "--ascii");
+    if (ascii && source.kind !== "spec") throw new Error("--ascii requires --spec");
+    const outPath = takeOption(args, "--out", !ascii);
     rejectExtra(args);
-    return { kind: "render", source, outPath: resolve(outPath), json, paste };
+    return { kind: "render", source, outPath: outPath ? resolve(outPath) : "", ascii, json, paste };
   }
 
   if (command === "inspect") {
@@ -191,6 +195,21 @@ async function main() {
 
   const pasteTarget = options.paste ? focusedAppBundleId() : null;
   if (options.kind === "render") {
+    if (options.ascii && options.source.kind === "spec") {
+      if (options.outPath.toLowerCase().endsWith(".png")) {
+        const result = renderAsciiToPng(options.source.value, { outPath: options.outPath, clipboard: true });
+        printResult(result, options.json);
+        if (options.paste) pasteTextIntoApp(`@${result.path}`, pasteTarget);
+        return;
+      }
+      const ascii = renderSceneToAscii(options.source.value);
+      if (options.outPath) writeFileSync(options.outPath, `${ascii}\n`);
+      if (options.json) console.log(JSON.stringify({ ascii, path: options.outPath || null }, null, 2));
+      else if (options.outPath) console.log(`@${options.outPath}`);
+      else console.log(ascii);
+      if (options.paste) pasteTextIntoApp(ascii, pasteTarget);
+      return;
+    }
     const result = options.source.kind === "spec"
       ? renderSceneToPng(options.source.value, { outPath: options.outPath, clipboard: true })
       : renderAdapterToPng(options.source.kind, options.source.value, { outPath: options.outPath, clipboard: true });
