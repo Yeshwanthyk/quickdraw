@@ -25,8 +25,10 @@ export type Binding = {
 };
 
 // ASCII-only styling (ignored by the pixel/SVG renderers). Lets a scene opt into
-// MonoSketch-style box-drawing weights, rounded corners, and dashed strokes.
-export type StrokeStyle = "single" | "bold" | "double";
+// MonoSketch-style box-drawing weights, rounded corners, dashed strokes, and fills.
+export type StrokeStyle = "none" | "single" | "bold" | "double";
+
+export type FillStyle = "none" | "solid" | "shade" | "dense" | "half";
 
 export type ArrowShape = BaseShape & {
   type: "arrow";
@@ -47,6 +49,7 @@ export type RectShape = BaseShape & {
   fill?: string;
   label?: string;
   strokeStyle?: StrokeStyle;
+  fillStyle?: FillStyle;
   rounded?: boolean;
   dashed?: boolean;
 };
@@ -94,6 +97,7 @@ export type SceneRectSpec = CommonSpec & {
   fill?: NamedColor | DrawColor | string;
   label?: string;
   strokeStyle?: StrokeStyle;
+  fillStyle?: FillStyle;
   rounded?: boolean;
   dashed?: boolean;
 };
@@ -227,6 +231,8 @@ function normalizeShape(shape: SceneShapeSpec, index: number): Shape[] {
     };
     const strokeStyle = strokeStyleValue(shape.strokeStyle);
     if (strokeStyle) rect.strokeStyle = strokeStyle;
+    const fillStyle = fillStyleValue(shape.fillStyle);
+    if (fillStyle) rect.fillStyle = fillStyle;
     if (shape.rounded === true) rect.rounded = true;
     if (shape.dashed === true) rect.dashed = true;
     return [rect];
@@ -376,7 +382,11 @@ function clamp01(value: number): number {
 }
 
 function strokeStyleValue(value: unknown): StrokeStyle | undefined {
-  return value === "single" || value === "bold" || value === "double" ? value : undefined;
+  return value === "none" || value === "single" || value === "bold" || value === "double" ? value : undefined;
+}
+
+function fillStyleValue(value: unknown): FillStyle | undefined {
+  return value === "none" || value === "solid" || value === "shade" || value === "dense" || value === "half" ? value : undefined;
 }
 
 function pointTuple(value: unknown, field: string): PointTuple {

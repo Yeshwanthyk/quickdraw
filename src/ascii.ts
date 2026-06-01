@@ -1,6 +1,6 @@
 // MonoSketch-style ASCII renderer: rasterizes a NormalizedScene onto a character
 // grid using box-drawing glyphs. Pure (no DOM/SVG/IO) so it is shared by the CLI.
-import { resolveArrowPoints, type NormalizedScene, type Shape, type StrokeStyle } from "./spec";
+import { resolveArrowPoints, type FillStyle, type NormalizedScene, type Shape, type StrokeStyle } from "./spec";
 import { layoutText } from "./text-layout";
 
 export type AsciiOptions = {
@@ -108,36 +108,53 @@ function paintRect(grid: Grid, rect: Extract<Shape, { type: "rect" }>, toCol: (x
   const r1 = toRow(y0 + Math.abs(rect.height));
   const weight = weightOf(rect.strokeStyle);
   const rounded = rect.rounded === true;
+  const drawBorder = rect.strokeStyle !== "none";
+  // Explicit fillStyle drives the ASCII fill; the only implicit fill is redact (solid).
+  const fillStyle: FillStyle = rect.fillStyle ?? (rect.fill === "#111827" ? "solid" : "none");
 
   if (c1 <= c0 || r1 <= r0) {
     if (rect.label) placeLabel(grid, rect.label, c0, c1, r0, r0);
     return;
   }
 
-  if (rect.fill) {
-    const fillChar = rect.fill === "#111827" ? "█" : " ";
-    for (let row = r0 + 1; row < r1; row += 1) for (let col = c0 + 1; col < c1; col += 1) setChar(grid, col, row, fillChar);
-  }
+  fillInterior(grid, fillStyle, c0, r0, c1, r1);
 
-  const dash = rect.dashed === true;
-  for (let col = c0 + 1; col < c1; col += 1) {
-    if (!dash || col % 2 === 0) {
-      addLine(grid, col, r0, LEFT | RIGHT, weight, rounded);
-      addLine(grid, col, r1, LEFT | RIGHT, weight, rounded);
+  if (drawBorder) {
+    const dash = rect.dashed === true;
+    for (let col = c0 + 1; col < c1; col += 1) {
+      if (!dash || col % 2 === 0) {
+        addLine(grid, col, r0, LEFT | RIGHT, weight, rounded);
+        addLine(grid, col, r1, LEFT | RIGHT, weight, rounded);
+      }
     }
-  }
-  for (let row = r0 + 1; row < r1; row += 1) {
-    if (!dash || row % 2 === 0) {
-      addLine(grid, c0, row, UP | DOWN, weight, rounded);
-      addLine(grid, c1, row, UP | DOWN, weight, rounded);
+    for (let row = r0 + 1; row < r1; row += 1) {
+      if (!dash || row % 2 === 0) {
+        addLine(grid, c0, row, UP | DOWN, weight, rounded);
+        addLine(grid, c1, row, UP | DOWN, weight, rounded);
+      }
     }
+    addLine(grid, c0, r0, DOWN | RIGHT, weight, rounded);
+    addLine(grid, c1, r0, DOWN | LEFT, weight, rounded);
+    addLine(grid, c0, r1, UP | RIGHT, weight, rounded);
+    addLine(grid, c1, r1, UP | LEFT, weight, rounded);
   }
-  addLine(grid, c0, r0, DOWN | RIGHT, weight, rounded);
-  addLine(grid, c1, r0, DOWN | LEFT, weight, rounded);
-  addLine(grid, c0, r1, UP | RIGHT, weight, rounded);
-  addLine(grid, c1, r1, UP | LEFT, weight, rounded);
 
   if (rect.label) placeLabel(grid, rect.label, c0, c1, r0, r1);
+}
+
+const FILL_CHARS: Record<Exclude<FillStyle, "none">, string> = { solid: "█", dense: "▓", shade: "░", half: "█" };
+
+function fillInterior(grid: Grid, style: FillStyle, c0: number, r0: number, c1: number, r1: number) {
+  if (style === "none") return;
+  const char = FILL_CHARS[style];
+  const half = style === "half";
+  const mid = c0 + Math.ceil((c1 - c0) / 2);
+  for (let row = r0 + 1; row < r1; row += 1) {
+    for (let col = c0 + 1; col < c1; col += 1) {
+      if (half && col >= mid) continue;
+      setChar(grid, col, row, char);
+    }
+  }
 }
 
 function placeLabel(grid: Grid, label: string, c0: number, c1: number, r0: number, r1: number) {
