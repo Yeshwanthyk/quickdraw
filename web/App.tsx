@@ -670,7 +670,7 @@ export default function App() {
 
       {mode === "grid" ? (
         <>
-          <GridMode canvasSize={canvasSize} shapes={shapes} tool={tool} color={color} strokeWidth={strokeWidth} style={gridStyle} onAddShape={commit} />
+          <GridMode canvasSize={canvasSize} shapes={shapes} tool={tool} color={color} strokeWidth={strokeWidth} style={gridStyle} selectedIds={selectedIds} onAddShape={commit} onSelect={setSelectedIds} onMove={moveShapes} />
           <AppearancePanel style={gridStyle} onChange={setGridStyle} />
         </>
       ) : (

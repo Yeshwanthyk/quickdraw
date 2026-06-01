@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { sceneToAscii } from "../../src/ascii";
+import { shapeAabb } from "../../src/spec";
 import type { DrawColor, Shape, Tool } from "../tools/types";
 import type { GridStyle } from "./AppearancePanel";
 
@@ -21,17 +22,38 @@ type GridModeProps = {
   color: DrawColor;
   strokeWidth: number;
   style: GridStyle;
+  selectedIds: string[];
   onAddShape: (shape: Shape) => void;
+  onSelect: (ids: string[]) => void;
+  onMove: (ids: string[], dx: number, dy: number) => void;
 };
 
 type Cell = { col: number; row: number };
+type Delta = { dCol: number; dRow: number };
 
 function shapeId() {
   return crypto.randomUUID();
 }
 
+function translateShape(shape: Shape, dx: number, dy: number): Shape {
+  if (shape.type === "pen" || shape.type === "arrow") {
+    return { ...shape, points: shape.points.map((value, index) => value + (index % 2 === 0 ? dx : dy)) };
+  }
+  return { ...shape, x: shape.x + dx, y: shape.y + dy };
+}
+
+function cellBounds(shape: Shape) {
+  const box = shapeAabb(shape);
+  return {
+    c0: Math.round(box.x / ASCII_W),
+    r0: Math.round(box.y / ASCII_H),
+    c1: Math.round((box.x + box.width) / ASCII_W),
+    r1: Math.round((box.y + box.height) / ASCII_H)
+  };
+}
+
 export function GridMode(props: GridModeProps) {
-  const { canvasSize, shapes, tool, color, strokeWidth, style, onAddShape } = props;
+  const { canvasSize, shapes, tool, color, strokeWidth, style, selectedIds, onAddShape, onSelect, onMove } = props;
   const cols = Math.max(1, Math.floor(canvasSize.width / ASCII_W));
   const rows = Math.max(1, Math.floor(canvasSize.height / ASCII_H));
   const width = cols * CELL_W;
@@ -39,8 +61,12 @@ export function GridMode(props: GridModeProps) {
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [draft, setDraft] = useState<Shape | null>(null);
+  const [moveDelta, setMoveDelta] = useState<Delta | null>(null);
   const startRef = useRef<Cell | null>(null);
+  const moveStartRef = useRef<Cell | null>(null);
+  const moveIdsRef = useRef<string[]>([]);
   const draftRef = useRef<Shape | null>(null);
+  const moveDeltaRef = useRef<Delta | null>(null);
   const rafRef = useRef<number | null>(null);
 
   const cellAt = useCallback((event: React.PointerEvent<HTMLCanvasElement>): Cell => {
@@ -49,6 +75,23 @@ export function GridMode(props: GridModeProps) {
     const row = Math.round((event.clientY - rect.top - RULER) / CELL_H);
     return { col: clamp(col, 0, cols), row: clamp(row, 0, rows) };
   }, [cols, rows]);
+
+  const scheduleRender = useCallback(() => {
+    if (rafRef.current !== null) return;
+    rafRef.current = window.requestAnimationFrame(() => {
+      rafRef.current = null;
+      setDraft(draftRef.current);
+      setMoveDelta(moveDeltaRef.current);
+    });
+  }, []);
+
+  const hitTest = useCallback((cell: Cell): Shape | undefined => {
+    for (let index = shapes.length - 1; index >= 0; index -= 1) {
+      const bounds = cellBounds(shapes[index]);
+      if (cell.col >= bounds.c0 && cell.col <= bounds.c1 && cell.row >= bounds.r0 && cell.row <= bounds.r1) return shapes[index];
+    }
+    return undefined;
+  }, [shapes]);
 
   const draftFor = useCallback((start: Cell, end: Cell): Shape | null => {
     if (tool === "rect" || tool === "redact") {
@@ -81,31 +124,67 @@ export function GridMode(props: GridModeProps) {
   }, [color, strokeWidth, style, tool]);
 
   const onPointerDown = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
+    const cell = cellAt(event);
+    if (tool === "select") {
+      const hit = hitTest(cell);
+      onSelect(hit ? [hit.id] : []);
+      moveStartRef.current = hit ? cell : null;
+      moveIdsRef.current = hit ? [hit.id] : [];
+      if (hit) event.currentTarget.setPointerCapture(event.pointerId);
+      return;
+    }
     if (tool !== "rect" && tool !== "redact" && tool !== "arrow") return;
     event.currentTarget.setPointerCapture(event.pointerId);
-    startRef.current = cellAt(event);
-  }, [cellAt, tool]);
+    startRef.current = cell;
+  }, [cellAt, hitTest, onSelect, tool]);
 
   const onPointerMove = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (moveStartRef.current) {
+      const cell = cellAt(event);
+      moveDeltaRef.current = { dCol: cell.col - moveStartRef.current.col, dRow: cell.row - moveStartRef.current.row };
+      scheduleRender();
+      return;
+    }
     if (!startRef.current) return;
     draftRef.current = draftFor(startRef.current, cellAt(event));
-    if (rafRef.current !== null) return;
-    rafRef.current = window.requestAnimationFrame(() => {
-      rafRef.current = null;
-      setDraft(draftRef.current);
-    });
-  }, [cellAt, draftFor]);
+    scheduleRender();
+  }, [cellAt, draftFor, scheduleRender]);
 
   const onPointerUp = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!startRef.current) return;
-    const final = draftFor(startRef.current, cellAt(event));
     if (rafRef.current !== null) window.cancelAnimationFrame(rafRef.current);
     rafRef.current = null;
+    if (moveStartRef.current) {
+      const cell = cellAt(event);
+      const dCol = cell.col - moveStartRef.current.col;
+      const dRow = cell.row - moveStartRef.current.row;
+      const ids = moveIdsRef.current;
+      moveStartRef.current = null;
+      moveIdsRef.current = [];
+      moveDeltaRef.current = null;
+      setMoveDelta(null);
+      if ((dCol !== 0 || dRow !== 0) && ids.length > 0) onMove(ids, dCol * ASCII_W, dRow * ASCII_H);
+      return;
+    }
+    if (!startRef.current) return;
+    const final = draftFor(startRef.current, cellAt(event));
     startRef.current = null;
     draftRef.current = null;
     setDraft(null);
     if (final) onAddShape(final);
-  }, [cellAt, draftFor, onAddShape]);
+  }, [cellAt, draftFor, onAddShape, onMove]);
+
+  // Reset all in-flight gesture state if the browser interrupts the pointer.
+  const onPointerCancel = useCallback(() => {
+    if (rafRef.current !== null) window.cancelAnimationFrame(rafRef.current);
+    rafRef.current = null;
+    moveStartRef.current = null;
+    moveIdsRef.current = [];
+    moveDeltaRef.current = null;
+    startRef.current = null;
+    draftRef.current = null;
+    setMoveDelta(null);
+    setDraft(null);
+  }, []);
 
   useEffect(() => () => {
     if (rafRef.current !== null) window.cancelAnimationFrame(rafRef.current);
@@ -122,8 +201,14 @@ export function GridMode(props: GridModeProps) {
     context.setTransform(dpr, 0, 0, dpr, 0, 0);
     drawGrid(context, { width, height, cols, rows });
 
+    const selected = new Set(selectedIds);
+    const moved = moveDelta
+      ? shapes.map((shape) => (selected.has(shape.id) ? translateShape(shape, moveDelta.dCol * ASCII_W, moveDelta.dRow * ASCII_H) : shape))
+      : shapes;
+    const renderShapes = draft ? [...moved, draft] : moved;
+
     const ascii = sceneToAscii(
-      { canvas: { width: canvasSize.width, height: canvasSize.height, background: "#ffffff" }, shapes: draft ? [...shapes, draft] : shapes },
+      { canvas: { width: canvasSize.width, height: canvasSize.height, background: "#ffffff" }, shapes: renderShapes },
       { cellWidth: ASCII_W, cellHeight: ASCII_H }
     );
     context.font = `${FONT}px "JetBrains Mono", Menlo, Consolas, monospace`;
@@ -137,7 +222,12 @@ export function GridMode(props: GridModeProps) {
         context.fillText(char, col * CELL_W + CELL_W / 2, RULER + row * CELL_H + CELL_H / 2);
       }
     });
-  }, [canvasSize.height, canvasSize.width, cols, draft, height, rows, shapes, width]);
+
+    for (const shape of renderShapes) {
+      if (!selected.has(shape.id)) continue;
+      drawSelection(context, cellBounds(shape));
+    }
+  }, [canvasSize.height, canvasSize.width, cols, draft, height, moveDelta, rows, selectedIds, shapes, width]);
 
   return (
     <section className="canvasRail">
@@ -149,6 +239,7 @@ export function GridMode(props: GridModeProps) {
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
+          onPointerCancel={onPointerCancel}
         />
       </div>
     </section>
@@ -157,6 +248,19 @@ export function GridMode(props: GridModeProps) {
 
 function clamp(value: number, min: number, max: number): number {
   return value < min ? min : value > max ? max : value;
+}
+
+function drawSelection(context: CanvasRenderingContext2D, bounds: { c0: number; r0: number; c1: number; r1: number }) {
+  const x = bounds.c0 * CELL_W - 3;
+  const y = RULER + bounds.r0 * CELL_H - 3;
+  const w = (bounds.c1 - bounds.c0) * CELL_W + 6;
+  const h = (bounds.r1 - bounds.r0) * CELL_H + 6;
+  context.save();
+  context.strokeStyle = "#2563eb";
+  context.lineWidth = 1.5;
+  context.setLineDash([5, 4]);
+  context.strokeRect(x, y, w, h);
+  context.restore();
 }
 
 function drawGrid(context: CanvasRenderingContext2D, size: { width: number; height: number; cols: number; rows: number }) {

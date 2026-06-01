@@ -461,6 +461,38 @@ async function smokeGridDraw(browser: Awaited<ReturnType<typeof chromium.launch>
   }
 }
 
+async function smokeGridEdit(browser: Awaited<ReturnType<typeof chromium.launch>>) {
+  const spec: SceneSpec = { canvas: { width: 640, height: 400 }, shapes: [{ id: "r", type: "rect", x: 32, y: 48, width: 64, height: 64, color: "blue", label: "box" }] };
+  const session = await startQuickPaintServer({ kind: "blank", scene: spec }, { open: false });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1400, height: 1000 } });
+    await page.goto(session.url);
+    await page.getByRole("button", { name: "Grid mode (ASCII)" }).click();
+    await page.getByRole("button", { name: "Select (1)" }).click();
+    const box = await page.locator(".gridCanvas").boundingBox();
+    if (!box) throw new Error("missing grid canvas");
+    // rect spans cells (4,3)-(12,7); click inside (8,5) and drag to (11,8): +3 col, +3 row.
+    await page.mouse.move(box.x + 8 * 12, box.y + 22 + 5 * 22);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 11 * 12, box.y + 22 + 8 * 22);
+    await page.mouse.up();
+    await page.getByRole("button", { name: "Paint mode" }).click();
+    await page.getByRole("button", { name: "Save" }).click();
+    const result = await session.result;
+    verifyResult(result);
+    const scene = normalizeScene(extractSceneMetadata(readFileSync(result.path)));
+    const rect = scene.shapes.find((shape) => shape.id === "r");
+    // +3 cells -> +24px x, +48px y: x 32->56, y 48->96.
+    if (!rect || rect.type !== "rect" || rect.x !== 56 || rect.y !== 96) {
+      throw new Error(`grid select+move did not translate by whole cells: ${JSON.stringify(rect)}`);
+    }
+    await page.close();
+    return result;
+  } finally {
+    session.stop();
+  }
+}
+
 async function smokeArrowBinding(browser: Awaited<ReturnType<typeof chromium.launch>>) {
   const spec: SceneSpec = {
     canvas: { width: 380, height: 240 },
@@ -859,6 +891,7 @@ async function main() {
     const arrowEndpointResult = await smokeArrowEndpointEditor(browser);
     const arrowBindingResult = await smokeArrowBinding(browser);
     const gridDrawResult = await smokeGridDraw(browser);
+    const gridEditResult = await smokeGridEdit(browser);
     const rotatedTextResult = await smokeRotatedTextEdit(browser);
     const rotatedParityResult = await smokeRotatedTextParity(browser);
     const wrappedTextResult = await smokeWrappedText(browser);
@@ -887,7 +920,7 @@ async function main() {
     const reopenedResult = await drawAndSaveViaCli(browser, ["open", "--spec", inspectedPath, cliEditResult.path], { expectedSourceKind: "image" });
     verifySceneMetadata(reopenedResult.path, cliOpenSpec, 0, { width: cliEditResult.width, height: cliEditResult.height });
 
-    console.log(JSON.stringify({ blank: blankResult, clipboardPath: clipPath, edit: editResult, text: textResult, activeText: activeTextResult, selection: selectionResult, multiSelect: multiSelectResult, preciseLineHit: preciseLineHitResult, zOrder: zOrderResult, arrowEndpoint: arrowEndpointResult, arrowBinding: arrowBindingResult, gridDraw: gridDrawResult, rotatedText: rotatedTextResult, rotatedParity: rotatedParityResult, wrappedText: wrappedTextResult, imageDeselect: imageDeselectResult, scene: sceneResult, cliOpen: cliOpenResult, cliEdit: cliEditResult, reopened: reopenedResult }, null, 2));
+    console.log(JSON.stringify({ blank: blankResult, clipboardPath: clipPath, edit: editResult, text: textResult, activeText: activeTextResult, selection: selectionResult, multiSelect: multiSelectResult, preciseLineHit: preciseLineHitResult, zOrder: zOrderResult, arrowEndpoint: arrowEndpointResult, arrowBinding: arrowBindingResult, gridDraw: gridDrawResult, gridEdit: gridEditResult, rotatedText: rotatedTextResult, rotatedParity: rotatedParityResult, wrappedText: wrappedTextResult, imageDeselect: imageDeselectResult, scene: sceneResult, cliOpen: cliOpenResult, cliEdit: cliEditResult, reopened: reopenedResult }, null, 2));
   } finally {
     await browser.close();
   }
