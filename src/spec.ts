@@ -24,12 +24,18 @@ export type Binding = {
   ratio: [number, number];
 };
 
+// ASCII-only styling (ignored by the pixel/SVG renderers). Lets a scene opt into
+// MonoSketch-style box-drawing weights, rounded corners, and dashed strokes.
+export type StrokeStyle = "single" | "bold" | "double";
+
 export type ArrowShape = BaseShape & {
   type: "arrow";
   points: number[];
   label?: string;
   startBinding?: Binding;
   endBinding?: Binding;
+  strokeStyle?: StrokeStyle;
+  dashed?: boolean;
 };
 
 export type RectShape = BaseShape & {
@@ -40,6 +46,9 @@ export type RectShape = BaseShape & {
   height: number;
   fill?: string;
   label?: string;
+  strokeStyle?: StrokeStyle;
+  rounded?: boolean;
+  dashed?: boolean;
 };
 
 export type TextShape = BaseShape & {
@@ -84,6 +93,9 @@ export type SceneRectSpec = CommonSpec & {
   height: number;
   fill?: NamedColor | DrawColor | string;
   label?: string;
+  strokeStyle?: StrokeStyle;
+  rounded?: boolean;
+  dashed?: boolean;
 };
 
 export type SceneArrowSpec = CommonSpec & {
@@ -94,6 +106,8 @@ export type SceneArrowSpec = CommonSpec & {
   label?: string;
   startBinding?: Binding;
   endBinding?: Binding;
+  strokeStyle?: StrokeStyle;
+  dashed?: boolean;
 };
 
 export type SceneTextSpec = CommonSpec & {
@@ -211,6 +225,10 @@ function normalizeShape(shape: SceneShapeSpec, index: number): Shape[] {
       fill: shape.type === "redact" ? "#111827" : typeof shape.fill === "string" ? colorFor(shape.fill, color) : undefined,
       label: textValue(shape.label)
     };
+    const strokeStyle = strokeStyleValue(shape.strokeStyle);
+    if (strokeStyle) rect.strokeStyle = strokeStyle;
+    if (shape.rounded === true) rect.rounded = true;
+    if (shape.dashed === true) rect.dashed = true;
     return [rect];
   }
 
@@ -223,6 +241,9 @@ function normalizeShape(shape: SceneShapeSpec, index: number): Shape[] {
     const endBinding = normalizeBinding(shape.endBinding);
     if (startBinding) arrow.startBinding = startBinding;
     if (endBinding) arrow.endBinding = endBinding;
+    const arrowStroke = strokeStyleValue(shape.strokeStyle);
+    if (arrowStroke) arrow.strokeStyle = arrowStroke;
+    if (shape.dashed === true) arrow.dashed = true;
     return [arrow];
   }
 
@@ -352,6 +373,10 @@ function normalizeBinding(value: unknown): Binding | undefined {
 
 function clamp01(value: number): number {
   return value < 0 ? 0 : value > 1 ? 1 : value;
+}
+
+function strokeStyleValue(value: unknown): StrokeStyle | undefined {
+  return value === "single" || value === "bold" || value === "double" ? value : undefined;
 }
 
 function pointTuple(value: unknown, field: string): PointTuple {
