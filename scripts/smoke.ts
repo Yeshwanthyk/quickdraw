@@ -493,6 +493,26 @@ async function smokeGridEdit(browser: Awaited<ReturnType<typeof chromium.launch>
   }
 }
 
+async function smokeGridCopyAscii(browser: Awaited<ReturnType<typeof chromium.launch>>) {
+  const spec: SceneSpec = { canvas: { width: 320, height: 160 }, shapes: [{ type: "rect", x: 24, y: 24, width: 96, height: 64, color: "blue", label: "API" }] };
+  const session = await startQuickPaintServer({ kind: "blank", scene: spec }, { open: false });
+  const context = await browser.newContext({ viewport: { width: 1200, height: 800 }, permissions: ["clipboard-read", "clipboard-write"] });
+  try {
+    const page = await context.newPage();
+    await page.goto(session.url);
+    await page.getByRole("button", { name: "Grid mode (ASCII)" }).click();
+    await page.getByRole("button", { name: "Copy ASCII" }).click();
+    const clip = await page.evaluate(() => navigator.clipboard.readText());
+    if (!clip.includes("┌") || !clip.includes("│") || !clip.includes("API")) {
+      throw new Error(`Copy ASCII did not put a box-drawing diagram on the clipboard:\n${clip}`);
+    }
+    await page.close();
+  } finally {
+    await context.close();
+    session.stop();
+  }
+}
+
 async function smokeArrowBinding(browser: Awaited<ReturnType<typeof chromium.launch>>) {
   const spec: SceneSpec = {
     canvas: { width: 380, height: 240 },
@@ -892,6 +912,7 @@ async function main() {
     const arrowBindingResult = await smokeArrowBinding(browser);
     const gridDrawResult = await smokeGridDraw(browser);
     const gridEditResult = await smokeGridEdit(browser);
+    await smokeGridCopyAscii(browser);
     const rotatedTextResult = await smokeRotatedTextEdit(browser);
     const rotatedParityResult = await smokeRotatedTextParity(browser);
     const wrappedTextResult = await smokeWrappedText(browser);

@@ -6,6 +6,7 @@ import { createHistory, pushHistory, redoHistory, undoHistory } from "./canvas/h
 import { TextEditor, type TextDraft } from "./canvas/TextEditor";
 import { GridMode } from "./grid/GridMode";
 import { AppearancePanel, defaultGridStyle, type GridStyle } from "./grid/AppearancePanel";
+import { sceneToAscii } from "../src/ascii";
 import { useImageSource } from "./canvas/useImageSource";
 import { bindingFor, normalizeScene, reflowBoundArrows, sceneFromShapes } from "../src/spec";
 import { layoutText } from "../src/text-layout";
@@ -380,6 +381,18 @@ export default function App() {
 
   const cancelText = useCallback(() => setTextDraft(null), []);
 
+  const [asciiCopied, setAsciiCopied] = useState(false);
+  const copyAscii = useCallback(async () => {
+    const text = sceneToAscii({ canvas: { width: canvasSize.width, height: canvasSize.height, background: "#ffffff" }, shapes });
+    try {
+      await navigator.clipboard.writeText(text);
+      setAsciiCopied(true);
+      window.setTimeout(() => setAsciiCopied(false), 1500);
+    } catch {
+      setAsciiCopied(false);
+    }
+  }, [canvasSize.height, canvasSize.width, shapes]);
+
   const editText = useCallback((shape: TextShape) => {
     setTextDraft({
       id: shape.id,
@@ -661,6 +674,7 @@ export default function App() {
         <SegmentButton active={(textDraft?.textAlign ?? textAlign) === "right"} title="Align right" onMouseDown={(event) => event.preventDefault()} onClick={() => updateTextAlign("right")}><AlignRight size={16} /></SegmentButton>
         <span className="spacer" />
         <span className="meta"><MousePointer2 size={14} /> {canvasSize.width}x{canvasSize.height}</span>
+        {mode === "grid" && <button className="action subtle" onClick={copyAscii} title="Copy as ASCII text">{asciiCopied ? "Copied" : "Copy ASCII"}</button>}
         <button className="action subtle" onClick={cancel}><X size={16} />Cancel</button>
         {saveState === "error" && <span className="saveError">Save failed</span>}
         <button className="action done" disabled={saveState === "saving"} onClick={done}>
