@@ -436,10 +436,10 @@ async function smokeGridDraw(browser: Awaited<ReturnType<typeof chromium.launch>
     const canvas = page.locator(".gridCanvas");
     const box = await canvas.boundingBox();
     if (!box) throw new Error("missing grid canvas");
-    // GridMode cells are 12x22 px with a 22px top ruler; draw cells (5,3)->(15,8).
-    await page.mouse.move(box.x + 5 * 12, box.y + 22 + 3 * 22);
+    // Grid view at default pan (24,24) + 20px ruler: cell (c,r) -> (24 + c*12, 44 + r*22).
+    await page.mouse.move(box.x + 24 + 5 * 12, box.y + 44 + 3 * 22);
     await page.mouse.down();
-    await page.mouse.move(box.x + 15 * 12, box.y + 22 + 8 * 22);
+    await page.mouse.move(box.x + 24 + 15 * 12, box.y + 44 + 8 * 22);
     await page.mouse.up();
     await page.getByRole("button", { name: "Paint mode" }).click();
     await page.getByRole("button", { name: "Save" }).click();
@@ -472,9 +472,9 @@ async function smokeGridEdit(browser: Awaited<ReturnType<typeof chromium.launch>
     const box = await page.locator(".gridCanvas").boundingBox();
     if (!box) throw new Error("missing grid canvas");
     // rect spans cells (4,3)-(12,7); click inside (8,5) and drag to (11,8): +3 col, +3 row.
-    await page.mouse.move(box.x + 8 * 12, box.y + 22 + 5 * 22);
+    await page.mouse.move(box.x + 24 + 8 * 12, box.y + 44 + 5 * 22);
     await page.mouse.down();
-    await page.mouse.move(box.x + 11 * 12, box.y + 22 + 8 * 22);
+    await page.mouse.move(box.x + 24 + 11 * 12, box.y + 44 + 8 * 22);
     await page.mouse.up();
     await page.getByRole("button", { name: "Paint mode" }).click();
     await page.getByRole("button", { name: "Save" }).click();
@@ -503,11 +503,11 @@ async function smokeGridText(browser: Awaited<ReturnType<typeof chromium.launch>
     const box = await page.locator(".gridCanvas").boundingBox();
     if (!box) throw new Error("missing grid canvas");
     // Escape must cancel without committing.
-    await page.mouse.click(box.x + 5 * 12, box.y + 22 + 2 * 22);
+    await page.mouse.click(box.x + 24 + 5 * 12, box.y + 44 + 2 * 22);
     await page.getByRole("textbox", { name: "Grid text" }).fill("discard");
     await page.keyboard.press("Escape");
     // Enter commits at the clicked cell.
-    await page.mouse.click(box.x + 10 * 12, box.y + 22 + 4 * 22);
+    await page.mouse.click(box.x + 24 + 10 * 12, box.y + 44 + 4 * 22);
     await page.getByRole("textbox", { name: "Grid text" }).fill("hello");
     await page.keyboard.press("Enter");
     await page.getByRole("button", { name: "Paint mode" }).click();

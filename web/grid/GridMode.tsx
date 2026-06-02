@@ -7,13 +7,14 @@ import type { GridStyle } from "./AppearancePanel";
 // Logical ASCII cell (matches sceneToAscii defaults): 1 char = 8x16 scene px.
 const ASCII_W = 8;
 const ASCII_H = 16;
-// On-screen size of one grid cell.
+// On-screen size of one grid cell at zoom 1.
 const CELL_W = 12;
 const CELL_H = 22;
-const RULER = 22;
-// Advance width of a monospace glyph is ~0.6*fontSize, so size the font to the cell
-// width (12 / 0.6 = 20) — otherwise box-drawing runs leave gaps and look dashed.
-const FONT = 20;
+const RULER = 20;
+// Font advance ~0.6*size, so size to the cell width (12/0.6 = 20) at zoom 1.
+const BASE_FONT = 20;
+const MIN_ZOOM = 0.35;
+const MAX_ZOOM = 3;
 
 type GridModeProps = {
   canvasSize: { width: number; height: number };
@@ -31,9 +32,14 @@ type GridModeProps = {
 type Cell = { col: number; row: number };
 type Delta = { dCol: number; dRow: number };
 type TextDraft = { col: number; row: number; value: string };
+type View = { panX: number; panY: number; zoom: number };
 
 function shapeId() {
   return crypto.randomUUID();
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return value < min ? min : value > max ? max : value;
 }
 
 function translateShape(shape: Shape, dx: number, dy: number): Shape {
@@ -53,32 +59,47 @@ function cellBounds(shape: Shape) {
   };
 }
 
+function rulerStep(zoom: number): number {
+  for (const step of [5, 10, 20, 50, 100, 200]) {
+    if (step * CELL_W * zoom >= 52) return step;
+  }
+  return 500;
+}
+
 export function GridMode(props: GridModeProps) {
   const { canvasSize, shapes, tool, color, strokeWidth, style, selectedIds, onAddShape, onSelect, onMove } = props;
-  const cols = Math.max(1, Math.floor(canvasSize.width / ASCII_W));
-  const rows = Math.max(1, Math.floor(canvasSize.height / ASCII_H));
-  const width = cols * CELL_W;
-  const height = RULER + rows * CELL_H;
 
+  const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const textInputRef = useRef<HTMLInputElement>(null);
   const textIntentRef = useRef<"commit" | "cancel" | null>(null);
+
+  const [size, setSize] = useState({ w: 800, h: 600 });
+  const [view, setView] = useState<View>({ panX: 24, panY: 24, zoom: 1 });
+  const viewRef = useRef(view);
+  viewRef.current = view;
+
   const [draft, setDraft] = useState<Shape | null>(null);
   const [moveDelta, setMoveDelta] = useState<Delta | null>(null);
   const [textDraft, setTextDraft] = useState<TextDraft | null>(null);
   const startRef = useRef<Cell | null>(null);
   const moveStartRef = useRef<Cell | null>(null);
   const moveIdsRef = useRef<string[]>([]);
+  const panRef = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
+  const spaceRef = useRef(false);
   const draftRef = useRef<Shape | null>(null);
   const moveDeltaRef = useRef<Delta | null>(null);
   const rafRef = useRef<number | null>(null);
 
-  const cellAt = useCallback((event: React.MouseEvent<HTMLCanvasElement>): Cell => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    const col = Math.round((event.clientX - rect.left) / CELL_W);
-    const row = Math.round((event.clientY - rect.top - RULER) / CELL_H);
-    return { col: clamp(col, 0, cols), row: clamp(row, 0, rows) };
-  }, [cols, rows]);
+  // World cell under a client point, using the current view. Clamped to the positive quadrant.
+  const cellAt = useCallback((clientX: number, clientY: number): Cell => {
+    const rect = canvasRef.current?.getBoundingClientRect();
+    const v = viewRef.current;
+    if (!rect) return { col: 0, row: 0 };
+    const col = Math.round((clientX - rect.left - v.panX) / (CELL_W * v.zoom));
+    const row = Math.round((clientY - rect.top - RULER - v.panY) / (CELL_H * v.zoom));
+    return { col: Math.max(0, col), row: Math.max(0, row) };
+  }, []);
 
   const scheduleRender = useCallback(() => {
     if (rafRef.current !== null) return;
@@ -104,7 +125,6 @@ export function GridMode(props: GridModeProps) {
       const w = Math.abs(end.col - start.col) * ASCII_W;
       const h = Math.abs(end.row - start.row) * ASCII_H;
       if (w === 0 || h === 0) return null;
-      // Redact stays an opaque solid block; it ignores the appearance panel.
       if (tool === "redact") return { id: shapeId(), type: "rect", x, y, width: w, height: h, color: "#111827", strokeWidth, fill: "#111827" };
       return {
         id: shapeId(), type: "rect", x, y, width: w, height: h, color, strokeWidth,
@@ -116,8 +136,6 @@ export function GridMode(props: GridModeProps) {
     }
     if (tool === "arrow") {
       if (start.col === end.col && start.row === end.row) return null;
-      // "none"/"single" both map to the renderer's default arrow weight (a borderless
-      // arrow is not meaningful); only bold/double change it.
       return {
         id: shapeId(), type: "arrow", points: [start.col * ASCII_W, start.row * ASCII_H, end.col * ASCII_W, end.row * ASCII_H], color, strokeWidth,
         ...(style.border === "bold" || style.border === "double" ? { strokeStyle: style.border } : {}),
@@ -128,7 +146,14 @@ export function GridMode(props: GridModeProps) {
   }, [color, strokeWidth, style, tool]);
 
   const onPointerDown = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
-    const cell = cellAt(event);
+    // Space-drag or middle-button pans the infinite canvas.
+    if (spaceRef.current || event.button === 1) {
+      event.currentTarget.setPointerCapture(event.pointerId);
+      const v = viewRef.current;
+      panRef.current = { x: event.clientX, y: event.clientY, panX: v.panX, panY: v.panY };
+      return;
+    }
+    const cell = cellAt(event.clientX, event.clientY);
     if (tool === "select") {
       const hit = hitTest(cell);
       onSelect(hit ? [hit.id] : []);
@@ -142,16 +167,12 @@ export function GridMode(props: GridModeProps) {
     startRef.current = cell;
   }, [cellAt, hitTest, onSelect, tool]);
 
-  // Text entry opens on click (not pointerdown) so the mousedown's focus-steal from the
-  // non-focusable canvas can't immediately blur and close the freshly-focused input.
   const onClick = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {
-    if (tool !== "text") return;
-    const cell = cellAt(event);
+    if (tool !== "text" || spaceRef.current) return;
+    const cell = cellAt(event.clientX, event.clientY);
     setTextDraft({ col: cell.col, row: cell.row, value: "" });
   }, [cellAt, tool]);
 
-  // onBlur is the single source of truth for ending text entry. Enter/Escape just blur
-  // the input (setting intent), so the unmount can't re-fire a second commit.
   const onTextBlur = useCallback(() => {
     const intent = textIntentRef.current;
     textIntentRef.current = null;
@@ -162,22 +183,28 @@ export function GridMode(props: GridModeProps) {
   }, [color, onAddShape, strokeWidth, textDraft]);
 
   const onPointerMove = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (panRef.current) {
+      const start = panRef.current;
+      setView((v) => ({ ...v, panX: start.panX + (event.clientX - start.x), panY: start.panY + (event.clientY - start.y) }));
+      return;
+    }
     if (moveStartRef.current) {
-      const cell = cellAt(event);
+      const cell = cellAt(event.clientX, event.clientY);
       moveDeltaRef.current = { dCol: cell.col - moveStartRef.current.col, dRow: cell.row - moveStartRef.current.row };
       scheduleRender();
       return;
     }
     if (!startRef.current) return;
-    draftRef.current = draftFor(startRef.current, cellAt(event));
+    draftRef.current = draftFor(startRef.current, cellAt(event.clientX, event.clientY));
     scheduleRender();
   }, [cellAt, draftFor, scheduleRender]);
 
   const onPointerUp = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (panRef.current) { panRef.current = null; return; }
     if (rafRef.current !== null) window.cancelAnimationFrame(rafRef.current);
     rafRef.current = null;
     if (moveStartRef.current) {
-      const cell = cellAt(event);
+      const cell = cellAt(event.clientX, event.clientY);
       const dCol = cell.col - moveStartRef.current.col;
       const dRow = cell.row - moveStartRef.current.row;
       const ids = moveIdsRef.current;
@@ -189,17 +216,17 @@ export function GridMode(props: GridModeProps) {
       return;
     }
     if (!startRef.current) return;
-    const final = draftFor(startRef.current, cellAt(event));
+    const final = draftFor(startRef.current, cellAt(event.clientX, event.clientY));
     startRef.current = null;
     draftRef.current = null;
     setDraft(null);
     if (final) onAddShape(final);
   }, [cellAt, draftFor, onAddShape, onMove]);
 
-  // Reset all in-flight gesture state if the browser interrupts the pointer.
   const onPointerCancel = useCallback(() => {
     if (rafRef.current !== null) window.cancelAnimationFrame(rafRef.current);
     rafRef.current = null;
+    panRef.current = null;
     moveStartRef.current = null;
     moveIdsRef.current = [];
     moveDeltaRef.current = null;
@@ -207,6 +234,49 @@ export function GridMode(props: GridModeProps) {
     draftRef.current = null;
     setMoveDelta(null);
     setDraft(null);
+  }, []);
+
+  // Track spacebar (pan modifier).
+  useEffect(() => {
+    const down = (event: KeyboardEvent) => { if (event.code === "Space" && !(event.target instanceof HTMLInputElement)) spaceRef.current = true; };
+    const up = (event: KeyboardEvent) => { if (event.code === "Space") spaceRef.current = false; };
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    return () => { window.removeEventListener("keydown", down); window.removeEventListener("keyup", up); };
+  }, []);
+
+  // Track container size for a viewport-filling canvas.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const update = () => setSize({ w: container.clientWidth, h: container.clientHeight });
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, []);
+
+  // Wheel: pan by default, zoom (toward cursor) with ctrl/cmd. Native listener for preventDefault.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      const v = viewRef.current;
+      if (event.ctrlKey || event.metaKey) {
+        const rect = canvas.getBoundingClientRect();
+        const mx = event.clientX - rect.left;
+        const my = event.clientY - rect.top - RULER;
+        const zoom = clamp(v.zoom * Math.exp(-event.deltaY * 0.0015), MIN_ZOOM, MAX_ZOOM);
+        const worldX = (mx - v.panX) / v.zoom;
+        const worldY = (my - v.panY) / v.zoom;
+        setView({ zoom, panX: mx - worldX * zoom, panY: my - worldY * zoom });
+      } else {
+        setView({ ...v, panX: v.panX - event.deltaX, panY: v.panY - event.deltaY });
+      }
+    };
+    canvas.addEventListener("wheel", onWheel, { passive: false });
+    return () => canvas.removeEventListener("wheel", onWheel);
   }, []);
 
   useEffect(() => () => {
@@ -219,10 +289,17 @@ export function GridMode(props: GridModeProps) {
     const context = canvas.getContext("2d");
     if (!context) return;
     const dpr = window.devicePixelRatio || 1;
-    canvas.width = Math.ceil(width * dpr);
-    canvas.height = Math.ceil(height * dpr);
+    canvas.width = Math.ceil(size.w * dpr);
+    canvas.height = Math.ceil(size.h * dpr);
     context.setTransform(dpr, 0, 0, dpr, 0, 0);
-    drawGrid(context, { width, height, cols, rows });
+
+    const { panX, panY, zoom } = view;
+    const cw = CELL_W * zoom;
+    const ch = CELL_H * zoom;
+    const screenX = (col: number) => panX + col * cw;
+    const screenY = (row: number) => RULER + panY + row * ch;
+
+    drawGrid(context, size, view);
 
     const selected = new Set(selectedIds);
     const moved = moveDelta
@@ -230,71 +307,95 @@ export function GridMode(props: GridModeProps) {
       : shapes;
     const renderShapes = draft ? [...moved, draft] : moved;
 
+    // Dynamic bounds so the drawable area grows past the original frame.
+    let maxX = canvasSize.width;
+    let maxY = canvasSize.height;
+    for (const shape of renderShapes) {
+      const box = shapeAabb(shape);
+      maxX = Math.max(maxX, box.x + box.width + ASCII_W * 2);
+      maxY = Math.max(maxY, box.y + box.height + ASCII_H * 2);
+    }
     const ascii = sceneToAscii(
-      { canvas: { width: canvasSize.width, height: canvasSize.height, background: "#ffffff" }, shapes: renderShapes },
+      { canvas: { width: maxX, height: maxY, background: "#ffffff" }, shapes: renderShapes },
       { cellWidth: ASCII_W, cellHeight: ASCII_H }
     );
-    context.font = `${FONT}px "JetBrains Mono", Menlo, Consolas, monospace`;
+
+    context.font = `${Math.max(6, Math.round(BASE_FONT * zoom))}px "JetBrains Mono", Menlo, Consolas, monospace`;
     context.textAlign = "center";
     context.textBaseline = "middle";
     context.fillStyle = "#e8eaed";
+    const firstCol = Math.max(0, Math.floor((-panX) / cw));
+    const firstRow = Math.max(0, Math.floor((-RULER - panY) / ch));
     ascii.split("\n").forEach((line, row) => {
-      for (let col = 0; col < line.length; col += 1) {
+      if (row < firstRow) return;
+      const y = screenY(row);
+      if (y < RULER - ch || y > size.h + ch) return;
+      for (let col = firstCol; col < line.length; col += 1) {
         const char = line[col];
         if (char === " ") continue;
-        context.fillText(char, col * CELL_W + CELL_W / 2, RULER + row * CELL_H + CELL_H / 2);
+        const x = screenX(col);
+        if (x < -cw) continue;
+        if (x > size.w + cw) break;
+        context.fillText(char, x + cw / 2, y + ch / 2);
       }
     });
 
     for (const shape of renderShapes) {
       if (!selected.has(shape.id)) continue;
-      drawSelection(context, cellBounds(shape));
+      drawSelection(context, cellBounds(shape), screenX, screenY, cw, ch);
     }
-  }, [canvasSize.height, canvasSize.width, cols, draft, height, moveDelta, rows, selectedIds, shapes, width]);
+  }, [canvasSize.height, canvasSize.width, draft, moveDelta, selectedIds, shapes, size, view]);
 
+  const panning = spaceRef.current;
   return (
-    <section className="canvasRail">
-      <div className="canvasFrame gridFrame" style={{ width, height }}>
-        <canvas
-          ref={canvasRef}
-          className="gridCanvas"
-          style={{ width, height }}
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerUp}
-          onPointerCancel={onPointerCancel}
-          onClick={onClick}
+    <div ref={containerRef} className="gridViewport">
+      <canvas
+        ref={canvasRef}
+        className="gridCanvas"
+        style={{ width: size.w, height: size.h, cursor: panning ? "grab" : "default" }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerCancel}
+        onClick={onClick}
+      />
+      {textDraft && (
+        <input
+          autoFocus
+          ref={textInputRef}
+          aria-label="Grid text"
+          className="gridTextInput"
+          value={textDraft.value}
+          onChange={(event) => { const value = event.target.value; setTextDraft((current) => current ? { ...current, value } : current); }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") { event.preventDefault(); textIntentRef.current = "commit"; textInputRef.current?.blur(); }
+            else if (event.key === "Escape") { event.preventDefault(); textIntentRef.current = "cancel"; textInputRef.current?.blur(); }
+          }}
+          onBlur={onTextBlur}
+          style={{
+            left: view.panX + textDraft.col * CELL_W * view.zoom,
+            top: RULER + view.panY + textDraft.row * CELL_H * view.zoom,
+            height: CELL_H * view.zoom
+          }}
         />
-        {textDraft && (
-          <input
-            autoFocus
-            ref={textInputRef}
-            aria-label="Grid text"
-            className="gridTextInput"
-            value={textDraft.value}
-            onChange={(event) => { const value = event.target.value; setTextDraft((current) => current ? { ...current, value } : current); }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") { event.preventDefault(); textIntentRef.current = "commit"; textInputRef.current?.blur(); }
-              else if (event.key === "Escape") { event.preventDefault(); textIntentRef.current = "cancel"; textInputRef.current?.blur(); }
-            }}
-            onBlur={onTextBlur}
-            style={{ left: textDraft.col * CELL_W, top: RULER + textDraft.row * CELL_H, height: CELL_H }}
-          />
-        )}
-      </div>
-    </section>
+      )}
+    </div>
   );
 }
 
-function clamp(value: number, min: number, max: number): number {
-  return value < min ? min : value > max ? max : value;
-}
-
-function drawSelection(context: CanvasRenderingContext2D, bounds: { c0: number; r0: number; c1: number; r1: number }) {
-  const x = bounds.c0 * CELL_W - 3;
-  const y = RULER + bounds.r0 * CELL_H - 3;
-  const w = (bounds.c1 - bounds.c0) * CELL_W + 6;
-  const h = (bounds.r1 - bounds.r0) * CELL_H + 6;
+function drawSelection(
+  context: CanvasRenderingContext2D,
+  bounds: { c0: number; r0: number; c1: number; r1: number },
+  screenX: (col: number) => number,
+  screenY: (row: number) => number,
+  cw: number,
+  ch: number
+) {
+  const pad = 2;
+  const x = screenX(bounds.c0) - pad;
+  const y = screenY(bounds.r0) - pad;
+  const w = (bounds.c1 - bounds.c0 + 1) * cw + pad * 2;
+  const h = (bounds.r1 - bounds.r0 + 1) * ch + pad * 2;
   context.save();
   context.strokeStyle = "#2563eb";
   context.lineWidth = 1.5;
@@ -303,27 +404,40 @@ function drawSelection(context: CanvasRenderingContext2D, bounds: { c0: number; 
   context.restore();
 }
 
-function drawGrid(context: CanvasRenderingContext2D, size: { width: number; height: number; cols: number; rows: number }) {
-  context.fillStyle = "#15171c";
-  context.fillRect(0, 0, size.width, size.height);
+function drawGrid(context: CanvasRenderingContext2D, size: { w: number; h: number }, view: View) {
+  const { panX, panY, zoom } = view;
+  const cw = CELL_W * zoom;
+  const ch = CELL_H * zoom;
 
-  // dotted grid
+  context.fillStyle = "#15171c";
+  context.fillRect(0, 0, size.w, size.h);
+
+  // dotted grid for the positive quadrant within view
   context.fillStyle = "#2b2f37";
-  for (let col = 0; col <= size.cols; col += 1) {
-    for (let row = 0; row <= size.rows; row += 1) {
-      context.fillRect(col * CELL_W - 0.5, RULER + row * CELL_H - 0.5, 1, 1);
+  const startCol = Math.max(0, Math.floor((-panX) / cw));
+  const startRow = Math.max(0, Math.floor((-RULER - panY) / ch));
+  for (let col = startCol; ; col += 1) {
+    const x = panX + col * cw;
+    if (x > size.w) break;
+    for (let row = startRow; ; row += 1) {
+      const y = RULER + panY + row * ch;
+      if (y > size.h) break;
+      context.fillRect(x - 0.5, y - 0.5, 1, 1);
     }
   }
 
-  // top ruler ticks + labels every 10 cells
+  // top ruler
   context.fillStyle = "#222530";
-  context.fillRect(0, 0, size.width, RULER);
+  context.fillRect(0, 0, size.w, RULER);
   context.fillStyle = "#7a818c";
   context.font = "11px ui-sans-serif, -apple-system, system-ui, sans-serif";
   context.textAlign = "left";
   context.textBaseline = "middle";
-  for (let col = 0; col <= size.cols; col += 10) {
-    context.fillRect(col * CELL_W, RULER - 6, 1, 6);
-    if (col > 0) context.fillText(String(col), col * CELL_W + 3, RULER / 2);
+  const step = rulerStep(zoom);
+  for (let col = Math.max(0, Math.ceil((-panX) / cw / step) * step); ; col += step) {
+    const x = panX + col * cw;
+    if (x > size.w) break;
+    context.fillRect(x, RULER - 6, 1, 6);
+    context.fillText(String(col), x + 3, RULER / 2);
   }
 }

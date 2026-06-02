@@ -625,18 +625,23 @@ export default function App() {
     });
   }, [draft, shapes, textDraft, transformPreview]);
   const selectedShape = selectedIds.length === 1 ? rendered.find((shape) => shape.id === selectedIds[0]) : undefined;
+  // Text styling controls only matter when authoring/selecting text — keep them out of
+  // the toolbar otherwise so it stays on one row.
+  const textContext = mode === "paint" && (tool === "text" || textDraft !== null || selectedShape?.type === "text");
 
   if (!source) return <div className="loading">Loading quick-paint...</div>;
 
   return (
     <main className="shell">
       <div className="toolbar" role="toolbar" aria-label="quick-paint tools">
-        <SegmentButton active={mode === "paint"} title="Paint mode" onClick={() => setMode("paint")}>Paint</SegmentButton>
-        <SegmentButton active={mode === "grid"} title="Grid mode (ASCII)" onClick={() => setMode("grid")}>Grid</SegmentButton>
+        <div className="segmented" role="group" aria-label="Editor mode">
+          <SegmentButton active={mode === "paint"} title="Paint mode" onClick={() => setMode("paint")}>Paint</SegmentButton>
+          <SegmentButton active={mode === "grid"} title="Grid mode (ASCII)" onClick={() => setMode("grid")}>Grid</SegmentButton>
+        </div>
         <span className="divider" />
         <ToolButton active={tool === "select"} title="Select (1)" onClick={() => setTool("select")}><MousePointer2 size={17} /></ToolButton>
-        <ToolButton active={tool === "pen"} title="Pen (2)" onClick={() => setTool("pen")}><PenLine size={17} /></ToolButton>
-        <ToolButton active={tool === "highlighter"} title="Highlighter (3)" onClick={() => setTool("highlighter")}><Highlighter size={17} /></ToolButton>
+        {mode === "paint" && <ToolButton active={tool === "pen"} title="Pen (2)" onClick={() => setTool("pen")}><PenLine size={17} /></ToolButton>}
+        {mode === "paint" && <ToolButton active={tool === "highlighter"} title="Highlighter (3)" onClick={() => setTool("highlighter")}><Highlighter size={17} /></ToolButton>}
         <ToolButton active={tool === "arrow"} title="Arrow (4)" onClick={() => setTool("arrow")}><ArrowRight size={17} /></ToolButton>
         <ToolButton active={tool === "rect"} title="Rectangle (5)" onClick={() => setTool("rect")}><Square size={17} /></ToolButton>
         <ToolButton active={tool === "text"} title="Text (6)" onClick={() => setTool("text")}><Type size={17} /></ToolButton>
@@ -647,39 +652,59 @@ export default function App() {
         <ToolButton disabled={selectedIds.length === 0} title="Delete selected" onClick={deleteSelected}><Trash2 size={17} /></ToolButton>
         <ToolButton disabled={selectedIds.length === 0} title="Send to back" onClick={sendSelectedToBack}><SendToBack size={17} /></ToolButton>
         <ToolButton disabled={selectedIds.length === 0} title="Bring to front" onClick={bringSelectedToFront}><BringToFront size={17} /></ToolButton>
-        <span className="divider" />
-        <div className="swatches">
-          {colors.map((swatch) => (
-            <button
-              aria-label={`Color ${swatch}`}
-              className={swatch === color ? "swatch active" : "swatch"}
-              key={swatch}
-              onClick={() => setColor(swatch)}
-              style={{ background: swatch }}
-              title={swatch}
-            />
-          ))}
+        {mode === "paint" && (
+          <>
+            <span className="divider" />
+            <div className="swatches">
+              {colors.map((swatch) => (
+                <button
+                  aria-label={`Color ${swatch}`}
+                  className={swatch === color ? "swatch active" : "swatch"}
+                  key={swatch}
+                  onClick={() => setColor(swatch)}
+                  style={{ background: swatch }}
+                  title={swatch}
+                />
+              ))}
+            </div>
+            <select aria-label="Stroke width" value={strokeWidth} onChange={(event) => setStrokeWidth(Number(event.target.value))}>
+              {widths.map((width) => <option key={width} value={width}>{width}px</option>)}
+            </select>
+            {textContext && (
+              <>
+                <span className="divider" />
+                <select aria-label="Font size" value={textDraft?.fontSize ?? fontSize} onChange={(event) => updateFontSize(Number(event.target.value))}>
+                  {fontSizes.map((size) => <option key={size} value={size}>{size}px</option>)}
+                </select>
+                <select aria-label="Font family" value={textDraft?.fontFamily ?? fontFamily ?? ""} onChange={(event) => updateFontFamily(event.target.value || undefined)}>
+                  {fontFamilies.map((font) => <option key={font.label} value={font.value ?? ""}>{font.label}</option>)}
+                </select>
+                <div className="segmented" role="group" aria-label="Text alignment">
+                  <SegmentButton active={(textDraft?.textAlign ?? textAlign) === "left"} title="Align left" onMouseDown={(event) => event.preventDefault()} onClick={() => updateTextAlign("left")}><AlignLeft size={16} /></SegmentButton>
+                  <SegmentButton active={(textDraft?.textAlign ?? textAlign) === "center"} title="Align center" onMouseDown={(event) => event.preventDefault()} onClick={() => updateTextAlign("center")}><AlignCenter size={16} /></SegmentButton>
+                  <SegmentButton active={(textDraft?.textAlign ?? textAlign) === "right"} title="Align right" onMouseDown={(event) => event.preventDefault()} onClick={() => updateTextAlign("right")}><AlignRight size={16} /></SegmentButton>
+                </div>
+              </>
+            )}
+          </>
+        )}
+        <div className="toolbarRight">
+          <span className="meta">{canvasSize.width} × {canvasSize.height}{mode === "grid" ? " · ascii" : ""}</span>
+          {mode === "grid" ? (
+            <>
+              <button className="action subtle" onClick={cancel}><X size={16} />Close</button>
+              <button className="action done" onClick={copyAscii} title="Copy as ASCII text"><Check size={16} />{asciiCopied ? "Copied" : "Copy ASCII"}</button>
+            </>
+          ) : (
+            <>
+              <button className="action subtle" onClick={cancel}><X size={16} />Cancel</button>
+              {saveState === "error" && <span className="saveError">Save failed</span>}
+              <button className="action done" disabled={saveState === "saving"} onClick={done}>
+                <Check size={16} />{saveState === "saving" ? "Saving" : "Save"}
+              </button>
+            </>
+          )}
         </div>
-        <select aria-label="Stroke width" value={strokeWidth} onChange={(event) => setStrokeWidth(Number(event.target.value))}>
-          {widths.map((width) => <option key={width} value={width}>{width}px</option>)}
-        </select>
-        <select aria-label="Font size" value={textDraft?.fontSize ?? fontSize} onChange={(event) => updateFontSize(Number(event.target.value))}>
-          {fontSizes.map((size) => <option key={size} value={size}>{size}px</option>)}
-        </select>
-        <select aria-label="Font family" value={textDraft?.fontFamily ?? fontFamily ?? ""} onChange={(event) => updateFontFamily(event.target.value || undefined)}>
-          {fontFamilies.map((font) => <option key={font.label} value={font.value ?? ""}>{font.label}</option>)}
-        </select>
-        <SegmentButton active={(textDraft?.textAlign ?? textAlign) === "left"} title="Align left" onMouseDown={(event) => event.preventDefault()} onClick={() => updateTextAlign("left")}><AlignLeft size={16} /></SegmentButton>
-        <SegmentButton active={(textDraft?.textAlign ?? textAlign) === "center"} title="Align center" onMouseDown={(event) => event.preventDefault()} onClick={() => updateTextAlign("center")}><AlignCenter size={16} /></SegmentButton>
-        <SegmentButton active={(textDraft?.textAlign ?? textAlign) === "right"} title="Align right" onMouseDown={(event) => event.preventDefault()} onClick={() => updateTextAlign("right")}><AlignRight size={16} /></SegmentButton>
-        <span className="spacer" />
-        <span className="meta"><MousePointer2 size={14} /> {canvasSize.width}x{canvasSize.height}</span>
-        {mode === "grid" && <button className="action subtle" onClick={copyAscii} title="Copy as ASCII text">{asciiCopied ? "Copied" : "Copy ASCII"}</button>}
-        <button className="action subtle" onClick={cancel}><X size={16} />Cancel</button>
-        {saveState === "error" && <span className="saveError">Save failed</span>}
-        <button className="action done" disabled={saveState === "saving"} onClick={done}>
-          <Check size={16} />{saveState === "saving" ? "Saving" : "Save"}
-        </button>
       </div>
 
       {mode === "grid" ? (

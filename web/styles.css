@@ -33,7 +33,7 @@ select {
 
 .shell {
   display: grid;
-  grid-template-rows: 48px 1fr;
+  grid-template-rows: auto 1fr;
   height: 100%;
   min-width: 760px;
 }
@@ -41,8 +41,10 @@ select {
 .toolbar {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
+  flex-wrap: wrap;
+  gap: 5px;
+  row-gap: 6px;
+  padding: 6px 10px;
   background: #f6f7f9;
   border-bottom: 1px solid #b8bdc7;
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.9) inset;
@@ -53,6 +55,7 @@ select {
 .action,
 select {
   height: 34px;
+  flex: none;
   border: 1px solid #b8bdc7;
   border-radius: 6px;
   background: #ffffff;
@@ -132,14 +135,24 @@ select {
   flex: 1;
 }
 
+/* Right-side group: pins actions to the trailing edge and wraps as a unit so
+   Save/Copy/Cancel are never pushed past the viewport. */
+.toolbarRight {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .meta {
   display: inline-flex;
   gap: 5px;
   align-items: center;
-  margin-right: 4px;
+  margin-right: 2px;
   color: #5d6675;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .action {
@@ -296,4 +309,114 @@ select {
   line-height: 1;
   outline: none;
   z-index: 2;
+}
+
+/* Grouped segmented controls (mode toggle, text alignment). */
+.segmented {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 34px;
+  padding: 3px;
+  background: #e9ecf1;
+  border: 1px solid #dfe3ea;
+  border-radius: 9px;
+  box-sizing: border-box;
+}
+
+/* Override the icon-sized base .segment (fixed 34px) so labels get room. */
+.segmented .segment {
+  width: auto;
+  min-width: 28px;
+  height: 100%;
+  padding: 0 11px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  color: #515866;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.segmented .segment:hover {
+  background: rgba(255, 255, 255, 0.55);
+  border-color: transparent;
+}
+
+.segmented .segment.active {
+  background: #ffffff;
+  border-color: #dfe3ea;
+  color: #2563eb;
+  box-shadow: 0 1px 2px rgba(20, 23, 29, 0.12);
+}
+
+/* Refined toolbar: borderless icon buttons (no box-wall), one blue accent. */
+.tool {
+  border-color: transparent;
+  background: transparent;
+}
+
+.tool:hover:not(:disabled) {
+  background: #e9ecf1;
+  border-color: transparent;
+}
+
+.tool.active {
+  background: #e7f0ff;
+  border-color: transparent;
+  color: #2563eb;
+}
+
+.tool:disabled {
+  background: transparent;
+}
+
+.divider {
+  height: 22px;
+  background: #d3d7df;
+}
+
+select {
+  border-color: #cdd2db;
+  background: #ffffff;
+  font-size: 13px;
+}
+
+.action {
+  border-color: #cdd2db;
+}
+
+.action.subtle {
+  background: #ffffff;
+  color: #3a4150;
+}
+
+.action.subtle:hover {
+  background: #eef0f4;
+  border-color: #cdd2db;
+}
+
+.action.done {
+  border-color: #1d4ed8;
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.action.done:hover:not(:disabled) {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+}
+
+/* Infinite grid viewport (fills the work area; canvas is pan/zoomed internally). */
+.gridViewport {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #15171c;
+}
+
+.gridCanvas {
+  display: block;
 }
