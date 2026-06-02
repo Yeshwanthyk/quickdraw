@@ -45,6 +45,10 @@ function shapeId() {
   return crypto.randomUUID();
 }
 
+function clampZoom(zoom: number) {
+  return Math.min(4, Math.max(0.2, zoom));
+}
+
 function normalizeRect(shape: Extract<Shape, { type: "rect" }>) {
   return {
     ...shape,
@@ -181,6 +185,7 @@ export default function App() {
   const [canvasSize, setCanvasSize] = useState({ width: 960, height: 620 });
   const [mode, setMode] = useState<"paint" | "grid">("paint");
   const [gridStyle, setGridStyle] = useState<GridStyle>(defaultGridStyle);
+  const [paintView, setPaintView] = useState({ x: 0, y: 0, zoom: 1 });
   const [tool, setTool] = useState<Tool>("select");
   const [color, setColor] = useState<DrawColor>("#e11d48");
   const [strokeWidth, setStrokeWidth] = useState(4);
@@ -199,6 +204,11 @@ export default function App() {
   const draftRef = useRef<Shape | null>(null);
   const previewRafRef = useRef<number | null>(null);
   const previewRef = useRef<TransformPreview | null>(null);
+  const paintViewRef = useRef(paintView);
+  paintViewRef.current = paintView;
+  const paintWorkspaceRef = useRef<HTMLElement>(null);
+  const panRef = useRef<{ sx: number; sy: number; vx: number; vy: number } | null>(null);
+  const spaceRef = useRef(false);
 
   const shapes = history.present;
   const canUndo = history.past.length > 0;
@@ -213,6 +223,7 @@ export default function App() {
     setCanvasSize(scene?.canvas ?? { width: source.width, height: source.height });
     setHistory(createHistory<Shape[]>(scene?.shapes ?? []));
     setSelectedIds([]);
+    setPaintView({ x: 0, y: 0, zoom: 1 });
   }, [source]);
 
   const pointer = useCallback(() => {
@@ -234,6 +245,12 @@ export default function App() {
   }, []);
 
   const onPointerDown = useCallback((event: Konva.KonvaEventObject<PointerEvent>) => {
+    // Space-drag (or middle button) pans the infinite workspace.
+    if (spaceRef.current || event.evt.button === 1) {
+      const v = paintViewRef.current;
+      panRef.current = { sx: event.evt.clientX, sy: event.evt.clientY, vx: v.x, vy: v.y };
+      return;
+    }
     if (tool === "select") {
       if (event.target === event.target.getStage() || event.target.name() === "canvas-background" || event.target.name() === "canvas-image") setSelectedIds([]);
       return;
@@ -275,7 +292,12 @@ export default function App() {
     }
   }, [color, fontFamily, fontSize, pointer, strokeWidth, textAlign, tool]);
 
-  const onPointerMove = useCallback(() => {
+  const onPointerMove = useCallback((event: Konva.KonvaEventObject<PointerEvent>) => {
+    if (panRef.current) {
+      const p = panRef.current;
+      setPaintView((v) => ({ ...v, x: p.vx + (event.evt.clientX - p.sx), y: p.vy + (event.evt.clientY - p.sy) }));
+      return;
+    }
     const currentDraft = draftRef.current ?? draft;
     if (!isDrawing || !currentDraft) return;
     const point = pointer();
@@ -296,6 +318,7 @@ export default function App() {
   }, [draft, isDrawing, pointer]);
 
   const onPointerUp = useCallback(() => {
+    if (panRef.current) { panRef.current = null; return; }
     const finalDraft = draftRef.current ?? draft;
     if (rafRef.current !== null) window.cancelAnimationFrame(rafRef.current);
     rafRef.current = null;
@@ -330,6 +353,50 @@ export default function App() {
     if (rafRef.current !== null) window.cancelAnimationFrame(rafRef.current);
     if (previewRafRef.current !== null) window.cancelAnimationFrame(previewRafRef.current);
   }, []);
+
+  // Spacebar held = pan modifier for the infinite paint workspace.
+  useEffect(() => {
+    const isTyping = (target: EventTarget | null) => target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
+    const setCursor = (value: string) => { if (paintWorkspaceRef.current) paintWorkspaceRef.current.style.cursor = value; };
+    const down = (event: KeyboardEvent) => {
+      if (event.code === "Space" && !isTyping(event.target)) { event.preventDefault(); spaceRef.current = true; setCursor("grab"); }
+    };
+    const up = (event: KeyboardEvent) => { if (event.code === "Space") { spaceRef.current = false; setCursor(""); } };
+    // A pan can end with the pointer outside the Stage; clear it globally so the next draw is clean.
+    const endPan = () => { panRef.current = null; };
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    window.addEventListener("pointerup", endPan);
+    window.addEventListener("pointercancel", endPan);
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+      window.removeEventListener("pointerup", endPan);
+      window.removeEventListener("pointercancel", endPan);
+    };
+  }, []);
+
+  // Wheel: pan by default, zoom toward the cursor with cmd/ctrl. Native listener for preventDefault.
+  useEffect(() => {
+    if (mode !== "paint") return;
+    const el = paintWorkspaceRef.current;
+    if (!el) return;
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      const v = paintViewRef.current;
+      if (event.ctrlKey || event.metaKey) {
+        const rect = el.getBoundingClientRect();
+        const mx = event.clientX - rect.left;
+        const my = event.clientY - rect.top;
+        const zoom = clampZoom(v.zoom * Math.exp(-event.deltaY * 0.0015));
+        setPaintView({ zoom, x: mx - ((mx - v.x) / v.zoom) * zoom, y: my - ((my - v.y) / v.zoom) * zoom });
+      } else {
+        setPaintView({ ...v, x: v.x - event.deltaX, y: v.y - event.deltaY });
+      }
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [mode, source]);
 
   const updateFontSize = useCallback((next: number) => {
     setFontSize(next);
@@ -542,6 +609,7 @@ export default function App() {
         setHistory(createHistory<Shape[]>([]));
         setDraft(null);
         setSelectedIds([]);
+        setPaintView({ x: 0, y: 0, zoom: 1 });
       };
       image.src = String(reader.result);
     };
@@ -713,8 +781,11 @@ export default function App() {
           <AppearancePanel style={gridStyle} onChange={setGridStyle} />
         </>
       ) : (
-      <section className="canvasRail">
-        <div className="canvasFrame" style={{ width: canvasSize.width, height: canvasSize.height }}>
+      <section className="paintWorkspace" ref={paintWorkspaceRef}>
+        <div
+          className="canvasFrame"
+          style={{ width: canvasSize.width, height: canvasSize.height, transform: `translate(${paintView.x}px, ${paintView.y}px) scale(${paintView.zoom})`, transformOrigin: "0 0" }}
+        >
           <Stage
             ref={stageRef}
             width={canvasSize.width}

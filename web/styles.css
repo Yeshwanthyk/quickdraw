@@ -420,3 +420,20 @@ select {
 .gridCanvas {
   display: block;
 }
+
+/* Infinite paint workspace: the page is a fixed-size card the user pans/zooms around. */
+.paintWorkspace {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #cdd1d8;
+  touch-action: none;
+}
+
+.paintWorkspace .canvasFrame {
+  position: absolute;
+  top: 0;
+  left: 0;
+  will-change: transform;
+}
