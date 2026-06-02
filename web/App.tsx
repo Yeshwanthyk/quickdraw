@@ -20,15 +20,11 @@ const fontFamilies = [
   { label: "Arial", value: "Arial" },
   { label: "Mono", value: "Menlo, Monaco, Consolas, monospace" }
 ];
-const toolShortcuts: Record<string, Tool> = {
-  "1": "select",
-  "2": "pen",
-  "3": "highlighter",
-  "4": "arrow",
-  "5": "rect",
-  "6": "text",
-  "7": "redact"
-};
+// Tool order per mode drives both the number shortcuts and the "(n)" labels,
+// so the keys always match the buttons that are actually visible.
+const paintToolOrder: Tool[] = ["select", "pen", "highlighter", "arrow", "rect", "text", "redact"];
+const gridToolOrder: Tool[] = ["select", "arrow", "rect", "text", "redact"];
+const toolOrderFor = (mode: "grid" | "paint"): Tool[] => (mode === "grid" ? gridToolOrder : paintToolOrder);
 const handleSize = 10;
 const rotateHandleOffset = 34;
 const resizeHandles = ["nw", "n", "ne", "e", "se", "s", "sw", "w"] as const;
@@ -183,10 +179,12 @@ export default function App() {
   const source = useImageSource();
   const [canvasImage, setCanvasImage] = useState<HTMLImageElement | null>(null);
   const [canvasSize, setCanvasSize] = useState({ width: 960, height: 620 });
-  const [mode, setMode] = useState<"paint" | "grid">("paint");
+  const [mode, setMode] = useState<"grid" | "paint">("grid");
   const [gridStyle, setGridStyle] = useState<GridStyle>(defaultGridStyle);
   const [paintView, setPaintView] = useState({ x: 0, y: 0, zoom: 1 });
   const [tool, setTool] = useState<Tool>("select");
+  const toolOrder = toolOrderFor(mode);
+  const toolNumber = (t: Tool) => toolOrder.indexOf(t) + 1;
   const [color, setColor] = useState<DrawColor>("#e11d48");
   const [strokeWidth, setStrokeWidth] = useState(4);
   const [fontSize, setFontSize] = useState(28);
@@ -620,9 +618,11 @@ export default function App() {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target;
       const isTyping = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement;
-      if (!isTyping && !event.metaKey && !event.ctrlKey && !event.altKey && toolShortcuts[event.key]) {
+      const activeToolOrder = toolOrderFor(mode);
+      const toolIndex = Number(event.key) - 1;
+      if (!isTyping && !event.metaKey && !event.ctrlKey && !event.altKey && toolIndex >= 0 && toolIndex < activeToolOrder.length) {
         event.preventDefault();
-        setTool(toolShortcuts[event.key]);
+        setTool(activeToolOrder[toolIndex]);
         setSelectedIds([]);
       } else if (!isTyping && (event.key === "Delete" || event.key === "Backspace") && selectedIds.length > 0) {
         event.preventDefault();
@@ -653,7 +653,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [cancel, deleteSelected, done, moveShapes, redo, selectedIds, undo]);
+  }, [cancel, deleteSelected, done, mode, moveShapes, redo, selectedIds, undo]);
 
   useEffect(() => {
     const onPaste = (event: ClipboardEvent) => {
@@ -703,17 +703,17 @@ export default function App() {
     <main className="shell">
       <div className="toolbar" role="toolbar" aria-label="quick-paint tools">
         <div className="segmented" role="group" aria-label="Editor mode">
-          <SegmentButton active={mode === "paint"} title="Paint mode" onClick={() => setMode("paint")}>Paint</SegmentButton>
           <SegmentButton active={mode === "grid"} title="Grid mode (ASCII)" onClick={() => setMode("grid")}>Grid</SegmentButton>
+          <SegmentButton active={mode === "paint"} title="Paint mode" onClick={() => setMode("paint")}>Paint</SegmentButton>
         </div>
         <span className="divider" />
-        <ToolButton active={tool === "select"} title="Select (1)" onClick={() => setTool("select")}><MousePointer2 size={17} /></ToolButton>
-        {mode === "paint" && <ToolButton active={tool === "pen"} title="Pen (2)" onClick={() => setTool("pen")}><PenLine size={17} /></ToolButton>}
-        {mode === "paint" && <ToolButton active={tool === "highlighter"} title="Highlighter (3)" onClick={() => setTool("highlighter")}><Highlighter size={17} /></ToolButton>}
-        <ToolButton active={tool === "arrow"} title="Arrow (4)" onClick={() => setTool("arrow")}><ArrowRight size={17} /></ToolButton>
-        <ToolButton active={tool === "rect"} title="Rectangle (5)" onClick={() => setTool("rect")}><Square size={17} /></ToolButton>
-        <ToolButton active={tool === "text"} title="Text (6)" onClick={() => setTool("text")}><Type size={17} /></ToolButton>
-        <ToolButton active={tool === "redact"} title="Redact (7)" onClick={() => setTool("redact")}><ScanLine size={17} /></ToolButton>
+        <ToolButton active={tool === "select"} title={`Select (${toolNumber("select")})`} onClick={() => setTool("select")}><MousePointer2 size={17} /></ToolButton>
+        {mode === "paint" && <ToolButton active={tool === "pen"} title={`Pen (${toolNumber("pen")})`} onClick={() => setTool("pen")}><PenLine size={17} /></ToolButton>}
+        {mode === "paint" && <ToolButton active={tool === "highlighter"} title={`Highlighter (${toolNumber("highlighter")})`} onClick={() => setTool("highlighter")}><Highlighter size={17} /></ToolButton>}
+        <ToolButton active={tool === "arrow"} title={`Arrow (${toolNumber("arrow")})`} onClick={() => setTool("arrow")}><ArrowRight size={17} /></ToolButton>
+        <ToolButton active={tool === "rect"} title={`Rectangle (${toolNumber("rect")})`} onClick={() => setTool("rect")}><Square size={17} /></ToolButton>
+        <ToolButton active={tool === "text"} title={`Text (${toolNumber("text")})`} onClick={() => setTool("text")}><Type size={17} /></ToolButton>
+        <ToolButton active={tool === "redact"} title={`Redact (${toolNumber("redact")})`} onClick={() => setTool("redact")}><ScanLine size={17} /></ToolButton>
         <span className="divider" />
         <ToolButton disabled={!canUndo} title="Undo" onClick={undo}><Undo2 size={17} /></ToolButton>
         <ToolButton disabled={!canRedo} title="Redo" onClick={redo}><Redo2 size={17} /></ToolButton>
