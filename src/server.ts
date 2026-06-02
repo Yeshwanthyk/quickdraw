@@ -11,7 +11,7 @@ export type CliMode =
   | { kind: "blank"; scene?: SceneSpec }
   | { kind: "edit"; path: string; scene?: SceneSpec };
 
-export type QuickPaintResult = {
+export type QuickdrawResult = {
   path: string;
   mime: "image/png";
   width: number;
@@ -61,15 +61,15 @@ function pngBufferFromDataUrl(dataUrl: string): Buffer {
   return Buffer.from(dataUrl.slice(index + marker.length), "base64");
 }
 
-export async function startQuickPaintServer(mode: CliMode, options: ServerOptions = {}) {
+export async function startQuickdrawServer(mode: CliMode, options: ServerOptions = {}) {
   mkdirSync("/tmp", { recursive: true });
   const source = sourceForMode(mode);
   const token = randomBytes(12).toString("hex");
-  const outPath = join("/tmp", `quick-paint-${token.slice(0, 8)}.png`);
+  const outPath = join("/tmp", `quickdraw-${token.slice(0, 8)}.png`);
 
-  let resolveResult!: (result: QuickPaintResult) => void;
+  let resolveResult!: (result: QuickdrawResult) => void;
   let rejectResult!: (error: Error) => void;
-  const result = new Promise<QuickPaintResult>((resolve, reject) => {
+  const result = new Promise<QuickdrawResult>((resolve, reject) => {
     resolveResult = resolve;
     rejectResult = reject;
   });
@@ -83,7 +83,7 @@ export async function startQuickPaintServer(mode: CliMode, options: ServerOption
     },
     plugins: [
       {
-        name: "quick-paint-api",
+        name: "quickdraw-api",
         configureServer(server) {
           server.middlewares.use(async (req, res, next) => {
             const url = new URL(req.url ?? "/", "http://127.0.0.1");
@@ -144,7 +144,7 @@ export async function startQuickPaintServer(mode: CliMode, options: ServerOption
   });
   await vite.listen();
   const origin = vite.resolvedUrls?.local[0]?.replace(/\/$/, "");
-  if (!origin) throw new Error("failed to start quick-paint server");
+  if (!origin) throw new Error("failed to start quickdraw server");
   const url = `${origin}/?token=${token}`;
   if (options.open !== false) openBrowser(url);
 

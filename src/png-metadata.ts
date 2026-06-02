@@ -1,5 +1,7 @@
 const pngSignature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-const metadataKey = "application/vnd.quick-paint+json";
+const metadataKey = "application/vnd.quickdraw+json";
+// Legacy key written by quick-paint <= 0.1.1; still read so older PNGs stay editable.
+const legacyMetadataKey = "application/vnd.quick-paint+json";
 
 type Chunk = {
   type: string;
@@ -7,7 +9,7 @@ type Chunk = {
 };
 
 export function embedSceneMetadata(png: Buffer, scene: unknown): Buffer {
-  const chunks = readChunks(png).filter((chunk) => !(chunk.type === "tEXt" && textChunkKey(chunk.data) === metadataKey));
+  const chunks = readChunks(png).filter((chunk) => !(chunk.type === "tEXt" && (textChunkKey(chunk.data) === metadataKey || textChunkKey(chunk.data) === legacyMetadataKey)));
   const metadata = Buffer.from(`${metadataKey}\0${JSON.stringify(scene)}`, "utf8");
   const insertAt = chunks.findIndex((chunk) => chunk.type === "IEND");
   if (insertAt === -1) throw new Error("invalid PNG: missing IEND");
@@ -21,7 +23,7 @@ export function extractSceneMetadata(png: Buffer): unknown | null {
     const separator = chunk.data.indexOf(0);
     if (separator === -1) continue;
     const key = chunk.data.subarray(0, separator).toString("utf8");
-    if (key !== metadataKey) continue;
+    if (key !== metadataKey && key !== legacyMetadataKey) continue;
     return JSON.parse(chunk.data.subarray(separator + 1).toString("utf8"));
   }
   return null;

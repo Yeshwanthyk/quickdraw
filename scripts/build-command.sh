@@ -2,9 +2,9 @@
 set -euo pipefail
 
 root=${0:A:h:h}
-out=${1:-$HOME/commands/quick-paint}
-payload=$(mktemp -t quick-paint-payload.XXXXXX.tar.gz)
-hash_file=$(mktemp -t quick-paint-hash.XXXXXX)
+out=${1:-$HOME/commands/quickdraw}
+payload=$(mktemp -t quickdraw-payload.XXXXXX.tar.gz)
+hash_file=$(mktemp -t quickdraw-hash.XXXXXX)
 
 cleanup() {
   rm -f "$payload" "$hash_file"
@@ -30,8 +30,8 @@ cat > "$out" <<EOF
 set -euo pipefail
 
 hash="$hash"
-cache="\${XDG_CACHE_HOME:-\$HOME/.cache}/quick-paint/\$hash"
-payload="\$(mktemp -t quick-paint.XXXXXX.tar.gz)"
+cache="\${XDG_CACHE_HOME:-\$HOME/.cache}/quickdraw/\$hash"
+payload="\$(mktemp -t quickdraw.XXXXXX.tar.gz)"
 
 cleanup() {
   rm -f "\$payload"
@@ -41,14 +41,14 @@ trap cleanup EXIT
 if [[ ! -x "\$cache/node_modules/.bin/vite" || ! -f "\$cache/src/cli.ts" ]]; then
   rm -rf "\$cache"
   mkdir -p "\$cache"
-  awk 'found { print } /^__QUICK_PAINT_PAYLOAD__$/ { found = 1 }' "\$0" | base64 -d > "\$payload"
+  awk 'found { print } /^__QUICKDRAW_PAYLOAD__$/ { found = 1 }' "\$0" | base64 -d > "\$payload"
   tar -xzf "\$payload" -C "\$cache"
 fi
 
 cd "\$cache"
 exec bun run src/cli.ts "\$@"
 
-__QUICK_PAINT_PAYLOAD__
+__QUICKDRAW_PAYLOAD__
 EOF
 
 base64 < "$payload" >> "$out"

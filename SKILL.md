@@ -1,47 +1,47 @@
 ---
-name: quick-paint
-description: Run quick-paint directly when the user wants to create, annotate, recover, or paste PNG drawings and screenshots.
+name: quickdraw
+description: Run quickdraw directly when the user wants to create, annotate, recover, or paste PNG drawings and screenshots.
 license: MIT
 compatibility: macOS; browser access; clipboard and screenshot modes use AppleScript/screencapture.
 allowed-tools: Bash Read
 metadata:
-  command: quick-paint
-  output: "@/tmp/quick-paint-*.png"
+  command: quickdraw
+  output: "@/tmp/quickdraw-*.png"
 ---
 
-# quick-paint
+# quickdraw
 
 Use when a quick drawing, screenshot markup, clipboard-image recovery, or `@/tmp/...png` image token is better than prose. Prefer the AI-first `render` command when the image can be described as shapes; open the browser only when human refinement is faster.
 
 ## Contract
 
-`quick-paint render` writes a PNG directly from a JSON scene spec without opening a browser. Browser modes open a temporary drawing surface, block until Save/Cancel, write a PNG under `/tmp`, copy the PNG to the macOS clipboard, and print `@/tmp/quick-paint-*.png`.
+`quickdraw render` writes a PNG directly from a JSON scene spec without opening a browser. Browser modes open a temporary drawing surface, block until Save/Cancel, write a PNG under `/tmp`, copy the PNG to the macOS clipboard, and print `@/tmp/quickdraw-*.png`.
 
 ## Commands
 
 ```bash
-quick-paint render --spec scene.json --out /tmp/diagram.png
-echo '{"shapes":[...]}' | quick-paint render --spec - --out /tmp/diagram.png --json
-echo '{"shapes":[...]}' | quick-paint render --spec - --ascii            # box-drawing text to stdout
-quick-paint render --spec scene.json --ascii --out /tmp/diagram.txt      # or a monospace .png
-echo 'graph LR; A-->B' | quick-paint render --mermaid - --out /tmp/flow.png --json
-echo 'digraph { A -> B }' | quick-paint render --dot - --out /tmp/graph.png --json
-quick-paint inspect /tmp/diagram.png --json
-quick-paint open --spec scene.json
-quick-paint open --spec scene.json /path/to/screenshot.png
-quick-paint
-quick-paint edit /path/to/image.png
-quick-paint paste
-quick-paint shot
-quick-paint --json
-quick-paint shot --paste
+quickdraw render --spec scene.json --out /tmp/diagram.png
+echo '{"shapes":[...]}' | quickdraw render --spec - --out /tmp/diagram.png --json
+echo '{"shapes":[...]}' | quickdraw render --spec - --ascii            # box-drawing text to stdout
+quickdraw render --spec scene.json --ascii --out /tmp/diagram.txt      # or a monospace .png
+echo 'graph LR; A-->B' | quickdraw render --mermaid - --out /tmp/flow.png --json
+echo 'digraph { A -> B }' | quickdraw render --dot - --out /tmp/graph.png --json
+quickdraw inspect /tmp/diagram.png --json
+quickdraw open --spec scene.json
+quickdraw open --spec scene.json /path/to/screenshot.png
+quickdraw
+quickdraw edit /path/to/image.png
+quickdraw paste
+quickdraw shot
+quickdraw --json
+quickdraw shot --paste
 ```
 
 Modes:
 - `render`: headless AI-first path. Reads a scene spec and writes a PNG without browser interaction.
 - `render --ascii`: render the scene as a MonoSketch-style box-drawing diagram. Prints text to stdout (or `--out file.txt`), or a monospace `--out file.png`. Requires `--spec`.
 - `render --mermaid` / `render --dot`: adapter path for simple graph source. Uses installed renderers first and `bunx` fallbacks when needed.
-- `inspect`: extracts the embedded quick-paint scene from a PNG for round-trip edits or diffing.
+- `inspect`: extracts the embedded quickdraw scene from a PNG for round-trip edits or diffing.
 - `open`: opens a browser canvas preloaded with an optional scene spec and optional image.
 - `blank`: no args; draw on a white canvas.
 - `edit`: annotate an existing image file.
@@ -58,8 +58,8 @@ Modes:
 - Use `open --spec` when a generated scene needs hand adjustment before saving.
 - Use `shot` for screenshot markup.
 - Use `paste` for a clipboard image.
-- Use `inspect` before editing an existing quick-paint PNG so you can reuse its scene instead of redrawing from pixels.
-- Do not use quick-paint for charts, data visualization, photo editing, or complex illustration.
+- Use `inspect` before editing an existing quickdraw PNG so you can reuse its scene instead of redrawing from pixels.
+- Do not use quickdraw for charts, data visualization, photo editing, or complex illustration.
 
 ## Scene Spec
 
@@ -88,21 +88,21 @@ ASCII styling (only affects `--ascii` output; ignored by the pixel/PNG paths): `
 
 ## Workflow
 
-1. For agent-authored images, write a small scene JSON and run `quick-paint render --spec scene.json --out /tmp/name.png --json`.
-2. For hand editing, run the smallest browser command for the source: `quick-paint open --spec <scene>`, `quick-paint edit <file>`, `quick-paint paste`, or `quick-paint shot`.
+1. For agent-authored images, write a small scene JSON and run `quickdraw render --spec scene.json --out /tmp/name.png --json`.
+2. For hand editing, run the smallest browser command for the source: `quickdraw open --spec <scene>`, `quickdraw edit <file>`, `quickdraw paste`, or `quickdraw shot`.
 3. If the browser opens, tell the user the command is waiting for Save.
 4. Use the printed `@/tmp/...png` as the durable artifact.
 5. To show it in Codex, render:
 
 ```markdown
-![quick-paint output](/tmp/quick-paint-xxxxxxxx.png)
+![quickdraw output](/tmp/quickdraw-xxxxxxxx.png)
 ```
 
 To continue editing:
 
 ```bash
-quick-paint inspect /tmp/quick-paint-xxxxxxxx.png --json > /tmp/scene.json
-quick-paint open --spec /tmp/scene.json
+quickdraw inspect /tmp/quickdraw-xxxxxxxx.png --json > /tmp/scene.json
+quickdraw open --spec /tmp/scene.json
 ```
 
 For adapter PNGs, `inspect` returns `{ "adapter": "...", "source": "..." }`; edit the source text and re-run `render --mermaid` or `render --dot` instead of passing that JSON to `open --spec`.
@@ -112,14 +112,14 @@ Browser selection supports z-order buttons, resize/rotation handles, arrow-key n
 ## Restore
 
 Command source:
-- Prefer `quick-paint` from `PATH`.
-- Dotfile/gitgud sync can install it under `~/commands/quick-paint`.
+- Prefer `quickdraw` from `PATH`.
+- Dotfile/gitgud sync can install it under `~/commands/quickdraw`.
 - The command is a self-extracting executable with its app payload; it should not depend on a source checkout.
 
 If rebuilding locally from the source checkout:
 
 ```bash
-cd /path/to/quick-paint
+cd /path/to/quickdraw
 bun install
 bun run build:command
 ```
@@ -129,8 +129,8 @@ Do not replace it with a repo-path launcher or `bun build --compile`; both are l
 ## Verification
 
 ```bash
-command -v quick-paint
-quick-paint --help
+command -v quickdraw
+quickdraw --help
 ```
 
-Do not claim an image exists until `quick-paint` exits and prints a path or JSON result.
+Do not claim an image exists until `quickdraw` exits and prints a path or JSON result.

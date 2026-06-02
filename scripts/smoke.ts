@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { chromium, type Locator, type Page } from "@playwright/test";
 import { readClipboardImage } from "../src/clipboard";
 import { extractSceneMetadata } from "../src/png-metadata";
-import { startQuickPaintServer, type QuickPaintResult } from "../src/server";
+import { startQuickdrawServer, type QuickdrawResult } from "../src/server";
 import { normalizeScene, type SceneRectSpec, type SceneSpec } from "../src/spec";
 import { layoutText } from "../src/text-layout";
 
@@ -14,7 +14,7 @@ declare global {
   }
 }
 
-function verifyResult(result: QuickPaintResult) {
+function verifyResult(result: QuickdrawResult) {
   if (!existsSync(result.path)) throw new Error(`missing output: ${result.path}`);
   if (statSync(result.path).size < 100) throw new Error(`empty output: ${result.path}`);
   if (result.mime !== "image/png") throw new Error(`unexpected mime: ${result.mime}`);
@@ -55,14 +55,16 @@ function assertBoundsClose(actual: ImageBounds, expected: ImageBounds, tolerance
 }
 
 function trace(message: string) {
-  if (process.env.QUICK_PAINT_SMOKE_TRACE === "1") console.error(`[smoke] ${message}`);
+  if (process.env.QUICKDRAW_SMOKE_TRACE === "1") console.error(`[smoke] ${message}`);
 }
 
-async function drawAndSave(browser: Awaited<ReturnType<typeof chromium.launch>>, mode: Parameters<typeof startQuickPaintServer>[0]) {
-  const session = await startQuickPaintServer(mode, { open: false });
+async function drawAndSave(browser: Awaited<ReturnType<typeof chromium.launch>>, mode: Parameters<typeof startQuickdrawServer>[0]) {
+  const session = await startQuickdrawServer(mode, { open: false });
   try {
     const page = await browser.newPage({ viewport: { width: 1200, height: 800 } });
     await page.goto(session.url);
+    // Grid is the default mode now; Pen lives in Paint mode.
+    await page.getByRole("button", { name: "Paint mode" }).click();
     await page.getByRole("button", { name: "Pen" }).click();
     const stage = page.locator(".stage canvas").first();
     const box = await stage.boundingBox();
@@ -114,11 +116,11 @@ async function dblclickStage(page: Page, stage: Locator, x: number, y: number) {
 }
 
 async function drawAndSaveViaCli(browser: Awaited<ReturnType<typeof chromium.launch>>, args: string[], options: { expectedSourceKind?: "blank" | "image" } = {}) {
-  const dir = mkdtempSync(join(tmpdir(), "quick-paint-cli-smoke-"));
+  const dir = mkdtempSync(join(tmpdir(), "quickdraw-cli-smoke-"));
   const urlFile = join(dir, "url");
   const proc = Bun.spawn(["bun", "run", "src/cli.ts", ...args, "--json"], {
     cwd: process.cwd(),
-    env: { ...process.env, QUICK_PAINT_NO_OPEN: "1", QUICK_PAINT_URL_FILE: urlFile },
+    env: { ...process.env, QUICKDRAW_NO_OPEN: "1", QUICKDRAW_URL_FILE: urlFile },
     stdout: "pipe",
     stderr: "pipe"
   });
@@ -127,6 +129,7 @@ async function drawAndSaveViaCli(browser: Awaited<ReturnType<typeof chromium.lau
     const page = await browser.newPage({ viewport: { width: 1200, height: 800 } });
     const url = readFileSync(urlFile, "utf8");
     await page.goto(url);
+    await page.getByRole("button", { name: "Paint mode" }).click();
     if (options.expectedSourceKind) {
       const sourceKind = await page.evaluate(async () => {
         const source = await fetch("/api/source").then((response) => response.json()) as { kind: string };
@@ -144,7 +147,7 @@ async function drawAndSaveViaCli(browser: Awaited<ReturnType<typeof chromium.lau
       new Response(proc.stderr).text()
     ]);
     if (exitCode !== 0) throw new Error(`CLI browser smoke failed\n${stderr}\n${stdout}`);
-    const result = JSON.parse(stdout.trim()) as QuickPaintResult;
+    const result = JSON.parse(stdout.trim()) as QuickdrawResult;
     verifyResult(result);
     return result;
   } catch (error) {
@@ -154,10 +157,11 @@ async function drawAndSaveViaCli(browser: Awaited<ReturnType<typeof chromium.lau
 }
 
 async function smokeTextEditor(browser: Awaited<ReturnType<typeof chromium.launch>>) {
-  const session = await startQuickPaintServer({ kind: "blank" }, { open: false });
+  const session = await startQuickdrawServer({ kind: "blank" }, { open: false });
   try {
     const page = await browser.newPage({ viewport: { width: 1200, height: 800 } });
     await page.goto(session.url);
+    await page.getByRole("button", { name: "Paint mode" }).click();
     const stage = page.locator(".stage canvas").first();
     await page.getByRole("button", { name: "Text" }).click();
     await clickStage(page, stage, 180, 120);
@@ -196,10 +200,11 @@ async function smokeTextEditor(browser: Awaited<ReturnType<typeof chromium.launc
 }
 
 async function smokeSaveActiveText(browser: Awaited<ReturnType<typeof chromium.launch>>) {
-  const session = await startQuickPaintServer({ kind: "blank" }, { open: false });
+  const session = await startQuickdrawServer({ kind: "blank" }, { open: false });
   try {
     const page = await browser.newPage({ viewport: { width: 900, height: 620 } });
     await page.goto(session.url);
+    await page.getByRole("button", { name: "Paint mode" }).click();
     const stage = page.locator(".stage canvas").first();
     await page.getByRole("button", { name: "Text" }).click();
     await clickStage(page, stage, 120, 80);
@@ -230,10 +235,11 @@ async function smokeSelectionTools(browser: Awaited<ReturnType<typeof chromium.l
       { id: "second-rect", type: "rect", x: 260, y: 100, width: 60, height: 60, color: "green" }
     ]
   };
-  const session = await startQuickPaintServer({ kind: "blank", scene: spec }, { open: false });
+  const session = await startQuickdrawServer({ kind: "blank", scene: spec }, { open: false });
   try {
     const page = await browser.newPage({ viewport: { width: 900, height: 620 } });
     await page.goto(session.url);
+    await page.getByRole("button", { name: "Paint mode" }).click();
     const stage = page.locator(".stage canvas").first();
     const stageBox = await stage.boundingBox();
     if (!stageBox) throw new Error("missing selection stage");
@@ -279,10 +285,11 @@ async function smokeMultiSelectDelete(browser: Awaited<ReturnType<typeof chromiu
       { id: "b", type: "rect", x: 180, y: 70, width: 70, height: 50, color: "green" }
     ]
   };
-  const session = await startQuickPaintServer({ kind: "blank", scene: spec }, { open: false });
+  const session = await startQuickdrawServer({ kind: "blank", scene: spec }, { open: false });
   try {
     const page = await browser.newPage({ viewport: { width: 760, height: 520 } });
     await page.goto(session.url);
+    await page.getByRole("button", { name: "Paint mode" }).click();
     const stage = page.locator(".stage canvas").first();
     await clickStage(page, stage, 60, 90);
     await page.keyboard.down("Shift");
@@ -308,10 +315,11 @@ async function smokePreciseLineHit(browser: Awaited<ReturnType<typeof chromium.l
       { id: "diagonal", type: "pen", points: [40, 40, 200, 200], color: "blue", strokeWidth: 4 }
     ]
   };
-  const session = await startQuickPaintServer({ kind: "blank", scene: spec }, { open: false });
+  const session = await startQuickdrawServer({ kind: "blank", scene: spec }, { open: false });
   try {
     const page = await browser.newPage({ viewport: { width: 680, height: 520 } });
     await page.goto(session.url);
+    await page.getByRole("button", { name: "Paint mode" }).click();
     const stage = page.locator(".stage canvas").first();
     await clickStage(page, stage, 55, 185);
     await page.keyboard.press("Delete");
@@ -338,10 +346,11 @@ async function smokeZOrder(browser: Awaited<ReturnType<typeof chromium.launch>>)
       { id: "top", type: "rect", x: 130, y: 94, width: 90, height: 70, color: "red" }
     ]
   };
-  const session = await startQuickPaintServer({ kind: "blank", scene: spec }, { open: false });
+  const session = await startQuickdrawServer({ kind: "blank", scene: spec }, { open: false });
   try {
     const page = await browser.newPage({ viewport: { width: 720, height: 520 } });
     await page.goto(session.url);
+    await page.getByRole("button", { name: "Paint mode" }).click();
     const stage = page.locator(".stage canvas").first();
     await clickStage(page, stage, 140, 104);
     await page.getByRole("button", { name: "Send to back" }).click();
@@ -384,10 +393,11 @@ async function smokeArrowEndpointEditor(browser: Awaited<ReturnType<typeof chrom
       { id: "editable-arrow", type: "arrow", from: [70, 110], to: [220, 110], color: "red", label: "route" }
     ]
   };
-  const session = await startQuickPaintServer({ kind: "blank", scene: spec }, { open: false });
+  const session = await startQuickdrawServer({ kind: "blank", scene: spec }, { open: false });
   try {
     const page = await browser.newPage({ viewport: { width: 760, height: 520 } });
     await page.goto(session.url);
+    await page.getByRole("button", { name: "Paint mode" }).click();
     const stage = page.locator(".stage canvas").first();
     const stageBox = await stage.boundingBox();
     if (!stageBox) throw new Error("missing arrow stage");
@@ -424,7 +434,7 @@ async function smokeArrowEndpointEditor(browser: Awaited<ReturnType<typeof chrom
 }
 
 async function smokeGridDraw(browser: Awaited<ReturnType<typeof chromium.launch>>) {
-  const session = await startQuickPaintServer({ kind: "blank" }, { open: false });
+  const session = await startQuickdrawServer({ kind: "blank" }, { open: false });
   try {
     const page = await browser.newPage({ viewport: { width: 1400, height: 1000 } });
     await page.goto(session.url);
@@ -432,7 +442,7 @@ async function smokeGridDraw(browser: Awaited<ReturnType<typeof chromium.launch>
     // Appearance panel: pick double border + dense fill, applied to the next shape.
     await page.getByRole("button", { name: "Double", exact: true }).click();
     await page.getByRole("button", { name: "Dense", exact: true }).click();
-    await page.getByRole("button", { name: "Rectangle (5)" }).click();
+    await page.getByRole("button", { name: "Rectangle (3)" }).click();
     const canvas = page.locator(".gridCanvas");
     const box = await canvas.boundingBox();
     if (!box) throw new Error("missing grid canvas");
@@ -463,7 +473,7 @@ async function smokeGridDraw(browser: Awaited<ReturnType<typeof chromium.launch>
 
 async function smokeGridEdit(browser: Awaited<ReturnType<typeof chromium.launch>>) {
   const spec: SceneSpec = { canvas: { width: 640, height: 400 }, shapes: [{ id: "r", type: "rect", x: 32, y: 48, width: 64, height: 64, color: "blue", label: "box" }] };
-  const session = await startQuickPaintServer({ kind: "blank", scene: spec }, { open: false });
+  const session = await startQuickdrawServer({ kind: "blank", scene: spec }, { open: false });
   try {
     const page = await browser.newPage({ viewport: { width: 1400, height: 1000 } });
     await page.goto(session.url);
@@ -494,12 +504,12 @@ async function smokeGridEdit(browser: Awaited<ReturnType<typeof chromium.launch>
 }
 
 async function smokeGridText(browser: Awaited<ReturnType<typeof chromium.launch>>) {
-  const session = await startQuickPaintServer({ kind: "blank" }, { open: false });
+  const session = await startQuickdrawServer({ kind: "blank" }, { open: false });
   try {
     const page = await browser.newPage({ viewport: { width: 1200, height: 800 } });
     await page.goto(session.url);
     await page.getByRole("button", { name: "Grid mode (ASCII)" }).click();
-    await page.getByRole("button", { name: "Text (6)" }).click();
+    await page.getByRole("button", { name: "Text (4)" }).click();
     const box = await page.locator(".gridCanvas").boundingBox();
     if (!box) throw new Error("missing grid canvas");
     // Escape must cancel without committing.
@@ -530,7 +540,7 @@ async function smokeGridText(browser: Awaited<ReturnType<typeof chromium.launch>
 
 async function smokeGridCopyAscii(browser: Awaited<ReturnType<typeof chromium.launch>>) {
   const spec: SceneSpec = { canvas: { width: 320, height: 160 }, shapes: [{ type: "rect", x: 24, y: 24, width: 96, height: 64, color: "blue", label: "API" }] };
-  const session = await startQuickPaintServer({ kind: "blank", scene: spec }, { open: false });
+  const session = await startQuickdrawServer({ kind: "blank", scene: spec }, { open: false });
   const context = await browser.newContext({ viewport: { width: 1200, height: 800 }, permissions: ["clipboard-read", "clipboard-write"] });
   try {
     const page = await context.newPage();
@@ -555,10 +565,11 @@ async function smokeArrowBinding(browser: Awaited<ReturnType<typeof chromium.lau
       { id: "box", type: "rect", x: 140, y: 70, width: 90, height: 70, color: "blue", label: "Bind" }
     ]
   };
-  const session = await startQuickPaintServer({ kind: "blank", scene: spec }, { open: false });
+  const session = await startQuickdrawServer({ kind: "blank", scene: spec }, { open: false });
   try {
     const page = await browser.newPage({ viewport: { width: 820, height: 560 } });
     await page.goto(session.url);
+    await page.getByRole("button", { name: "Paint mode" }).click();
     const stage = page.locator(".stage canvas").first();
     const stageBox = await stage.boundingBox();
     if (!stageBox) throw new Error("missing arrow binding stage");
@@ -611,10 +622,11 @@ async function smokeRotatedTextEdit(browser: Awaited<ReturnType<typeof chromium.
       { id: "rotated-text", type: "text", x: 190, y: 120, text: "Rotate", color: "dark", fontSize: 32, textAlign: "center", angle: 33 }
     ]
   };
-  const session = await startQuickPaintServer({ kind: "blank", scene: spec }, { open: false });
+  const session = await startQuickdrawServer({ kind: "blank", scene: spec }, { open: false });
   try {
     const page = await browser.newPage({ viewport: { width: 820, height: 560 } });
     await page.goto(session.url);
+    await page.getByRole("button", { name: "Paint mode" }).click();
     const stage = page.locator(".stage canvas").first();
     await dblclickStage(page, stage, 190, 140);
     await page.getByRole("textbox", { name: "Text" }).fill("Edited rotation");
@@ -635,7 +647,7 @@ async function smokeRotatedTextEdit(browser: Awaited<ReturnType<typeof chromium.
 }
 
 async function smokeRotatedTextParity(browser: Awaited<ReturnType<typeof chromium.launch>>) {
-  const dir = mkdtempSync(join(tmpdir(), "quick-paint-rotated-parity-"));
+  const dir = mkdtempSync(join(tmpdir(), "quickdraw-rotated-parity-"));
   const headlessPath = join(dir, "headless.png");
   const spec: SceneSpec = {
     canvas: { width: 420, height: 260 },
@@ -644,10 +656,11 @@ async function smokeRotatedTextParity(browser: Awaited<ReturnType<typeof chromiu
     ]
   };
   runCli(["render", "--spec", "-", "--out", headlessPath, "--json"], JSON.stringify(spec));
-  const session = await startQuickPaintServer({ kind: "blank", scene: spec }, { open: false });
+  const session = await startQuickdrawServer({ kind: "blank", scene: spec }, { open: false });
   try {
     const page = await browser.newPage({ viewport: { width: 820, height: 560 } });
     await page.goto(session.url);
+    await page.getByRole("button", { name: "Paint mode" }).click();
     await page.getByRole("button", { name: "Save" }).click();
     const browserResult = await session.result;
     verifyResult(browserResult);
@@ -661,7 +674,7 @@ async function smokeRotatedTextParity(browser: Awaited<ReturnType<typeof chromiu
 
 async function smokeWrappedText(browser: Awaited<ReturnType<typeof chromium.launch>>) {
   trace("wrapped: start");
-  const dir = mkdtempSync(join(tmpdir(), "quick-paint-wrapped-text-"));
+  const dir = mkdtempSync(join(tmpdir(), "quickdraw-wrapped-text-"));
   const headlessPath = join(dir, "headless.png");
   const wrappedLines = layoutText({ id: "wrap", type: "text", x: 0, y: 0, width: 126, text: "MMMM test", color: "#111827", strokeWidth: 4, fontSize: 24, fontFamily: "Arial" }).lines;
   if (wrappedLines.length !== 2) throw new Error(`fixed-width text did not wrap deterministically: ${JSON.stringify(wrappedLines)}`);
@@ -681,11 +694,12 @@ async function smokeWrappedText(browser: Awaited<ReturnType<typeof chromium.laun
   const headlessBounds = visibleBounds(headlessPath);
   if (headlessBounds.height < 52) throw new Error(`headless wrapped text did not span multiple lines: ${JSON.stringify(headlessBounds)}`);
 
-  const session = await startQuickPaintServer({ kind: "blank", scene: spec }, { open: false });
+  const session = await startQuickdrawServer({ kind: "blank", scene: spec }, { open: false });
   try {
     trace("wrapped: browser session started");
     const page = await browser.newPage({ viewport: { width: 760, height: 520 } });
     await page.goto(session.url);
+    await page.getByRole("button", { name: "Paint mode" }).click();
     await page.getByRole("button", { name: "Save" }).click();
     const browserResult = await session.result;
     trace("wrapped: browser saved");
@@ -701,15 +715,17 @@ async function smokeWrappedText(browser: Awaited<ReturnType<typeof chromium.laun
     if (browserBounds.height < 52) throw new Error(`browser wrapped text did not span multiple lines: ${JSON.stringify(browserBounds)}`);
     await page.close();
     session.stop();
-    const reopen = await startQuickPaintServer({ kind: "blank", scene: roundTrip }, { open: false });
+    const reopen = await startQuickdrawServer({ kind: "blank", scene: roundTrip }, { open: false });
     reopen.result.catch(() => {});
     try {
       trace("wrapped: reopen session started");
       const editPage = await browser.newPage({ viewport: { width: 760, height: 520 } });
       await editPage.goto(reopen.url);
+      await editPage.getByRole("button", { name: "Paint mode" }).click();
       trace("wrapped: reopen page loaded");
       const stage = editPage.locator(".stage canvas").first();
-      await dblclickStage(editPage, stage, 48, 48);
+      // The wrapped text block renders below its y origin; click into the rendered lines.
+      await dblclickStage(editPage, stage, 60, 88);
       trace("wrapped: double clicked");
       const editor = editPage.getByRole("textbox", { name: "Text" });
       await editor.waitFor({ timeout: 3000 });
@@ -736,10 +752,11 @@ async function smokeImageBackedDeselect(browser: Awaited<ReturnType<typeof chrom
       { id: "image-text", type: "text", x: 180, y: 120, text: "on image", color: "dark" }
     ]
   };
-  const session = await startQuickPaintServer({ kind: "edit", path: imagePath, scene: spec }, { open: false });
+  const session = await startQuickdrawServer({ kind: "edit", path: imagePath, scene: spec }, { open: false });
   try {
     const page = await browser.newPage({ viewport: { width: 1200, height: 800 } });
     await page.goto(session.url);
+    await page.getByRole("button", { name: "Paint mode" }).click();
     const stage = page.locator(".stage canvas").first();
     await clickStage(page, stage, 180, 130);
     await clickStage(page, stage, 20, 20);
@@ -766,7 +783,7 @@ function runCli(args: string[], input?: string) {
     stderr: "pipe"
   });
   if (!result.success) {
-    throw new Error(`quick-paint ${args.join(" ")} failed\n${result.stderr.toString()}\n${result.stdout.toString()}`);
+    throw new Error(`quickdraw ${args.join(" ")} failed\n${result.stderr.toString()}\n${result.stdout.toString()}`);
   }
   return result.stdout.toString().trim();
 }
@@ -774,7 +791,7 @@ function runCli(args: string[], input?: string) {
 async function expectCliRejects(args: string[], expectedMessage: string) {
   const proc = Bun.spawn(["bun", "run", "src/cli.ts", ...args], {
     cwd: process.cwd(),
-    env: { ...process.env, QUICK_PAINT_NO_OPEN: "1" },
+    env: { ...process.env, QUICKDRAW_NO_OPEN: "1" },
     stdout: "pipe",
     stderr: "pipe"
   });
@@ -817,7 +834,7 @@ function verifySceneMetadata(path: string, expected: SceneSpec, expectedExtraSha
 }
 
 async function smokeCliRenderInspect() {
-  const dir = mkdtempSync(join(tmpdir(), "quick-paint-smoke-"));
+  const dir = mkdtempSync(join(tmpdir(), "quickdraw-smoke-"));
   const outPath = join(dir, "render.png");
   const spec: SceneSpec = {
     canvas: { width: 420, height: 240 },
@@ -829,7 +846,7 @@ async function smokeCliRenderInspect() {
     ]
   };
   const stdout = runCli(["render", "--spec", "-", "--out", outPath, "--json"], JSON.stringify(spec));
-  const result = JSON.parse(stdout) as QuickPaintResult;
+  const result = JSON.parse(stdout) as QuickdrawResult;
   verifyResult(result);
   if (result.path !== outPath) throw new Error(`render wrote unexpected path: ${result.path}`);
   verifySceneMetadata(outPath, spec);
@@ -858,7 +875,7 @@ async function smokeCliRenderInspect() {
 
   const dot = "digraph { A -> B; B -> C }";
   const dotPath = join(dir, "dot.png");
-  const dotResult = JSON.parse(runCli(["render", "--dot", "-", "--out", dotPath, "--json"], dot)) as QuickPaintResult;
+  const dotResult = JSON.parse(runCli(["render", "--dot", "-", "--out", dotPath, "--json"], dot)) as QuickdrawResult;
   verifyResult(dotResult);
   const dotMetadata = JSON.parse(runCli(["inspect", dotPath, "--json"])) as { adapter?: string; source?: string };
   if (dotMetadata.adapter !== "dot" || dotMetadata.source !== dot) {
@@ -867,7 +884,7 @@ async function smokeCliRenderInspect() {
 
   const mermaid = "graph LR; A-->B; B-->C";
   const mermaidPath = join(dir, "mermaid.png");
-  const mermaidResult = JSON.parse(runCli(["render", "--mermaid", "-", "--out", mermaidPath, "--json"], mermaid)) as QuickPaintResult;
+  const mermaidResult = JSON.parse(runCli(["render", "--mermaid", "-", "--out", mermaidPath, "--json"], mermaid)) as QuickdrawResult;
   verifyResult(mermaidResult);
   const mermaidMetadata = JSON.parse(runCli(["inspect", mermaidPath, "--json"])) as { adapter?: string; source?: string };
   if (mermaidMetadata.adapter !== "mermaid" || mermaidMetadata.source !== mermaid) {
@@ -883,7 +900,7 @@ async function smokeCliRenderInspect() {
 }
 
 async function smokeAsciiRender() {
-  const dir = mkdtempSync(join(tmpdir(), "quick-paint-ascii-"));
+  const dir = mkdtempSync(join(tmpdir(), "quickdraw-ascii-"));
   const ascii = (spec: SceneSpec) => runCli(["render", "--spec", "-", "--ascii"], JSON.stringify(spec));
   const hasGlyphs = (text: string, glyphs: string[], label: string) => {
     for (const glyph of glyphs) if (!text.includes(glyph)) throw new Error(`${label} missing ${glyph}:\n${text}`);
@@ -913,7 +930,7 @@ async function smokeAsciiRender() {
   // ASCII PNG round-trips the scene (incl. the new strokeStyle field) through metadata.
   const spec: SceneSpec = { canvas: { width: 200, height: 120 }, shapes: [{ type: "rect", x: 20, y: 20, width: 120, height: 60, color: "blue", label: "hi", strokeStyle: "double" }] };
   const pngPath = join(dir, "ascii.png");
-  const pngResult = JSON.parse(runCli(["render", "--spec", "-", "--ascii", "--out", pngPath, "--json"], JSON.stringify(spec))) as QuickPaintResult;
+  const pngResult = JSON.parse(runCli(["render", "--spec", "-", "--ascii", "--out", pngPath, "--json"], JSON.stringify(spec))) as QuickdrawResult;
   verifyResult(pngResult);
   const meta = normalizeScene(JSON.parse(runCli(["inspect", pngPath, "--json"])));
   const rect = meta.shapes.find((shape) => shape.type === "rect");
@@ -962,7 +979,7 @@ async function main() {
     };
     const sceneResult = await drawAndSave(browser, { kind: "blank", scene: normalizeScene(spec) });
     verifySceneMetadata(sceneResult.path, spec, 1);
-    const specPath = join(mkdtempSync(join(tmpdir(), "quick-paint-spec-")), "scene.json");
+    const specPath = join(mkdtempSync(join(tmpdir(), "quickdraw-spec-")), "scene.json");
     const cliOpenSpec: SceneSpec = { shapes: [{ type: "text", x: 220, y: 32, text: "cli-open WWWWWW", color: "dark", fontSize: 19, fontFamily: "Arial", textAlign: "center" }] };
     writeFileSync(specPath, JSON.stringify(cliOpenSpec));
     const cliOpenResult = await drawAndSaveViaCli(browser, ["open", "--spec", specPath], { expectedSourceKind: "blank" });
@@ -972,7 +989,7 @@ async function main() {
       throw new Error(`edit --spec changed image dimensions: ${cliEditResult.width}x${cliEditResult.height}`);
     }
     verifySceneMetadata(cliEditResult.path, cliOpenSpec, 0, { width: blankResult.width, height: blankResult.height });
-    const inspectedPath = join(mkdtempSync(join(tmpdir(), "quick-paint-inspect-")), "scene.json");
+    const inspectedPath = join(mkdtempSync(join(tmpdir(), "quickdraw-inspect-")), "scene.json");
     writeFileSync(inspectedPath, runCli(["inspect", cliEditResult.path, "--json"]));
     const reopenedResult = await drawAndSaveViaCli(browser, ["open", "--spec", inspectedPath, cliEditResult.path], { expectedSourceKind: "image" });
     verifySceneMetadata(reopenedResult.path, cliOpenSpec, 0, { width: cliEditResult.width, height: cliEditResult.height });

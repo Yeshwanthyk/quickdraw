@@ -1,4 +1,4 @@
-# quick-paint → AI-first + Excalidraw-grade Analysis
+# quickdraw → AI-first + Excalidraw-grade Analysis
 
 ## Current state diagnosis
 
@@ -72,7 +72,7 @@ Caching is two-tier:
 
 Throttling: `throttleRAF` (`utils.ts:155`) collapses synchronous calls into one paint per frame.
 
-### Perf opportunities for quick-paint (ranked by ROI)
+### Perf opportunities for quickdraw (ranked by ROI)
 
 | # | Change | Effort | Impact |
 |---|---|---|---|
@@ -91,23 +91,23 @@ Skip: spatial index for hit-testing (linear scan is fine <500 shapes), `Offscree
 
 ## 4. AI-first — biggest gap, biggest opportunity
 
-The agent's blunt summary: **a SKILL.md on a GUI is human-first with an adapter; quick-paint should let agents render images without a browser at all.**
+The agent's blunt summary: **a SKILL.md on a GUI is human-first with an adapter; quickdraw should let agents render images without a browser at all.**
 
 ### Five proposed surface changes
 
 ```bash
 # Headless render — no browser, no block
-quick-paint render --spec scene.json --out file.png
-echo '{"shapes":[...]}' | quick-paint render --spec - --out file.png
+quickdraw render --spec scene.json --out file.png
+echo '{"shapes":[...]}' | quickdraw render --spec - --out file.png
 
 # Pre-populated browser session for human refinement
-quick-paint open --spec annotations.json screenshot.png
+quickdraw open --spec annotations.json screenshot.png
 
 # Round-trip: extract embedded scene from PNG
-quick-paint inspect file.png --json
+quickdraw inspect file.png --json
 
 # Mermaid / dot adapters
-echo "graph LR; A-->B" | quick-paint render --mermaid - --out flow.png
+echo "graph LR; A-->B" | quickdraw render --mermaid - --out flow.png
 ```
 
 ### Agent-friendly scene spec (vs Excalidraw's verbose format)
@@ -151,7 +151,7 @@ Add: decision tree (when to use `render` vs `open` vs `shot`), inline schema wit
 
 ---
 
-## Files we'd touch in quick-paint
+## Files we'd touch in quickdraw
 
 | Existing file | Change |
 |---|---|
@@ -210,5 +210,5 @@ Add: decision tree (when to use `render` vs `open` vs `shot`), inline schema wit
 1. **Which phase first?** Phase 1 (AI-first) gives the biggest user-visible uplift for the original goal. Phase 2 (text) directly fixes what you flagged. Both at once is ~23h.
 2. **Headless renderer dep:** OK with native `canvas` (Cairo) install friction, or prefer pure-JS path?
 3. **Spec format scope:** keep minimal (rect/arrow/text/pen/highlight) or also support groups/frames/bound-text now?
-4. **PNG metadata format:** match Excalidraw's `application/vnd.excalidraw+json` key (cross-tool compat) or use our own `application/vnd.quick-paint+json`?
+4. **PNG metadata format:** match Excalidraw's `application/vnd.excalidraw+json` key (cross-tool compat) or use our own `application/vnd.quickdraw+json`?
 5. **`/tmp/excalidraw` cache:** keep for ongoing reference or clean up?

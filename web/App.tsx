@@ -697,11 +697,11 @@ export default function App() {
   // the toolbar otherwise so it stays on one row.
   const textContext = mode === "paint" && (tool === "text" || textDraft !== null || selectedShape?.type === "text");
 
-  if (!source) return <div className="loading">Loading quick-paint...</div>;
+  if (!source) return <div className="loading">Loading quickdraw...</div>;
 
   return (
     <main className="shell">
-      <div className="toolbar" role="toolbar" aria-label="quick-paint tools">
+      <div className="toolbar" role="toolbar" aria-label="quickdraw tools">
         <div className="segmented" role="group" aria-label="Editor mode">
           <SegmentButton active={mode === "grid"} title="Grid mode (ASCII)" onClick={() => setMode("grid")}>Grid</SegmentButton>
           <SegmentButton active={mode === "paint"} title="Paint mode" onClick={() => setMode("paint")}>Paint</SegmentButton>

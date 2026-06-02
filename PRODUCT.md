@@ -10,7 +10,7 @@ Agents and senior engineers who need to create, annotate, inspect, and pass arou
 
 ## Product Purpose
 
-quick-paint turns screenshots, clipboard images, and structured scene specs into durable PNG artifacts under `/tmp`, then copies or prints those artifacts back into the agent workflow.
+quickdraw turns screenshots, clipboard images, and structured scene specs into durable PNG artifacts under `/tmp`, then copies or prints those artifacts back into the agent workflow.
 
 ## Brand Personality
 

@@ -6,16 +6,16 @@ import { sceneToAscii } from "./ascii";
 import { normalizeScene, resolveArrowPoints, type NormalizedScene, type Shape } from "./spec";
 import { copyImageToClipboard } from "./clipboard";
 import { layoutText } from "./text-layout";
-import type { QuickPaintResult } from "./server";
+import type { QuickdrawResult } from "./server";
 
 export type RenderOptions = {
   outPath: string;
   clipboard?: boolean;
 };
 
-export function renderSceneToPng(input: unknown, options: RenderOptions): QuickPaintResult {
+export function renderSceneToPng(input: unknown, options: RenderOptions): QuickdrawResult {
   const scene = normalizeScene(input);
-  const tmp = mkdtempSync(join(tmpdir(), "quick-paint-render-"));
+  const tmp = mkdtempSync(join(tmpdir(), "quickdraw-render-"));
   const svgPath = join(tmp, "scene.svg");
   try {
     writeFileSync(svgPath, sceneToSvg(scene));
@@ -47,10 +47,10 @@ export function renderSceneToAscii(input: unknown): string {
   return sceneToAscii(normalizeScene(input));
 }
 
-export function renderAsciiToPng(input: unknown, options: RenderOptions): QuickPaintResult {
+export function renderAsciiToPng(input: unknown, options: RenderOptions): QuickdrawResult {
   const scene = normalizeScene(input);
   const ascii = sceneToAscii(scene);
-  const tmp = mkdtempSync(join(tmpdir(), "quick-paint-ascii-"));
+  const tmp = mkdtempSync(join(tmpdir(), "quickdraw-ascii-"));
   const svgPath = join(tmp, "ascii.svg");
   try {
     writeFileSync(svgPath, asciiToSvg(ascii));

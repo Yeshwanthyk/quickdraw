@@ -1,88 +1,88 @@
-# quick-paint
+# quickdraw
 
 A tiny AI-first PNG tool: render simple scene specs headlessly, or open a fast browser canvas for screenshot/image annotation.
 
 ## Install
 
-Download the `quick-paint` executable from the latest GitHub Release, then put it somewhere on your `PATH`:
+Download the `quickdraw` executable from the latest GitHub Release, then put it somewhere on your `PATH`:
 
 ```bash
 mkdir -p ~/.local/bin
-curl -L -o ~/.local/bin/quick-paint \
-  https://github.com/<owner>/quick-paint/releases/latest/download/quick-paint
-chmod +x ~/.local/bin/quick-paint
-quick-paint --help
+curl -L -o ~/.local/bin/quickdraw \
+  https://github.com/Yeshwanthyk/quickdraw/releases/latest/download/quickdraw
+chmod +x ~/.local/bin/quickdraw
+quickdraw --help
 ```
 
 On macOS, if Gatekeeper marks the downloaded file as quarantined:
 
 ```bash
-xattr -d com.apple.quarantine ~/.local/bin/quick-paint
+xattr -d com.apple.quarantine ~/.local/bin/quickdraw
 ```
 
 If you use `~/commands` instead:
 
 ```bash
 mkdir -p ~/commands
-curl -L -o ~/commands/quick-paint \
-  https://github.com/<owner>/quick-paint/releases/latest/download/quick-paint
-chmod +x ~/commands/quick-paint
+curl -L -o ~/commands/quickdraw \
+  https://github.com/Yeshwanthyk/quickdraw/releases/latest/download/quickdraw
+chmod +x ~/commands/quickdraw
 ```
 
-Replace `<owner>` with the GitHub owner after the repository is published. The release asset to upload is `dist/quick-paint`.
+The release asset to upload is `dist/quickdraw` (built via `bun run build:command dist/quickdraw`). While the repository is private, the `curl` commands above need an authenticated request — download the asset with `gh release download <tag> -R Yeshwanthyk/quickdraw -p quickdraw -O ~/commands/quickdraw` instead.
 
 ## Install the agent skill
 
-This repo includes `SKILL.md` for Claude, Codex, Pi, and other agents that support filesystem skills. After installing the `quick-paint` command, tell your agent:
+This repo includes `SKILL.md` for Claude, Codex, Pi, and other agents that support filesystem skills. After installing the `quickdraw` command, tell your agent:
 
-> Install the quick-paint skill from this repo's `SKILL.md` into my agent skills directory as `quick-paint`.
+> Install the quickdraw skill from this repo's `SKILL.md` into my agent skills directory as `quickdraw`.
 
 Manual install examples:
 
 ```bash
 # Claude Code
-mkdir -p ~/.claude/skills/quick-paint
-cp SKILL.md ~/.claude/skills/quick-paint/SKILL.md
+mkdir -p ~/.claude/skills/quickdraw
+cp SKILL.md ~/.claude/skills/quickdraw/SKILL.md
 
 # Codex
-mkdir -p ~/.codex/skills/quick-paint
-cp SKILL.md ~/.codex/skills/quick-paint/SKILL.md
+mkdir -p ~/.codex/skills/quickdraw
+cp SKILL.md ~/.codex/skills/quickdraw/SKILL.md
 
 # Pi
-mkdir -p ~/.pi/agent/skills/quick-paint
-cp SKILL.md ~/.pi/agent/skills/quick-paint/SKILL.md
+mkdir -p ~/.pi/agent/skills/quickdraw
+cp SKILL.md ~/.pi/agent/skills/quickdraw/SKILL.md
 ```
 
 If you sync skills through a dotfiles/gitgud directory, copy it there instead and symlink agent-specific skill folders to it:
 
 ```bash
-mkdir -p ~/.gitgud/skills/quick-paint
-cp SKILL.md ~/.gitgud/skills/quick-paint/SKILL.md
-ln -sfn ~/.gitgud/skills/quick-paint ~/.claude/skills/quick-paint
-ln -sfn ~/.gitgud/skills/quick-paint ~/.codex/skills/quick-paint
-ln -sfn ~/.gitgud/skills/quick-paint ~/.pi/agent/skills/quick-paint
+mkdir -p ~/.gitgud/skills/quickdraw
+cp SKILL.md ~/.gitgud/skills/quickdraw/SKILL.md
+ln -sfn ~/.gitgud/skills/quickdraw ~/.claude/skills/quickdraw
+ln -sfn ~/.gitgud/skills/quickdraw ~/.codex/skills/quickdraw
+ln -sfn ~/.gitgud/skills/quickdraw ~/.pi/agent/skills/quickdraw
 ```
 
 ## Use
 
 ```bash
-quick-paint render --spec scene.json --out /tmp/diagram.png
-echo '{"shapes":[...]}' | quick-paint render --spec - --out /tmp/diagram.png --json
-echo '{"shapes":[...]}' | quick-paint render --spec - --ascii            # box-drawing text to stdout
-quick-paint render --spec scene.json --ascii --out /tmp/diagram.txt      # or a monospace .png
-echo 'graph LR; A-->B' | quick-paint render --mermaid - --out /tmp/flow.png --json
-echo 'digraph { A -> B }' | quick-paint render --dot - --out /tmp/graph.png --json
-quick-paint inspect /tmp/diagram.png --json
-quick-paint open --spec scene.json image.png
-quick-paint                         # blank canvas
-quick-paint edit image.png          # annotate an image
-quick-paint paste                   # annotate clipboard PNG
-quick-paint shot                    # take a macOS screenshot, then annotate
-quick-paint --json                  # machine-readable result
-quick-paint shot --paste            # paste @/tmp/...png token back to focused app
+quickdraw render --spec scene.json --out /tmp/diagram.png
+echo '{"shapes":[...]}' | quickdraw render --spec - --out /tmp/diagram.png --json
+echo '{"shapes":[...]}' | quickdraw render --spec - --ascii            # box-drawing text to stdout
+quickdraw render --spec scene.json --ascii --out /tmp/diagram.txt      # or a monospace .png
+echo 'graph LR; A-->B' | quickdraw render --mermaid - --out /tmp/flow.png --json
+echo 'digraph { A -> B }' | quickdraw render --dot - --out /tmp/graph.png --json
+quickdraw inspect /tmp/diagram.png --json
+quickdraw open --spec scene.json image.png
+quickdraw                         # blank canvas
+quickdraw edit image.png          # annotate an image
+quickdraw paste                   # annotate clipboard PNG
+quickdraw shot                    # take a macOS screenshot, then annotate
+quickdraw --json                  # machine-readable result
+quickdraw shot --paste            # paste @/tmp/...png token back to focused app
 ```
 
-Browser output is a PNG under `/tmp/quick-paint-xxxxxxxx.png`. Rendered output goes to `--out`. The image is also copied to the macOS clipboard when possible.
+Browser output is a PNG under `/tmp/quickdraw-xxxxxxxx.png`. Rendered output goes to `--out`. The image is also copied to the macOS clipboard when possible.
 
 Minimal scene spec:
 
@@ -128,14 +128,14 @@ The release executable is a self-extracting zsh script containing the Vite app p
 
 ```bash
 bun install
-scripts/build-command.sh dist/quick-paint
-shasum -a 256 dist/quick-paint > dist/quick-paint.sha256
+scripts/build-command.sh dist/quickdraw
+shasum -a 256 dist/quickdraw > dist/quickdraw.sha256
 ```
 
 Verify the artifact:
 
 ```bash
-dist/quick-paint --help
+dist/quickdraw --help
 bun run smoke
 ```
 

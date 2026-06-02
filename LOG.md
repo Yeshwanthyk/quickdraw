@@ -32,10 +32,10 @@ Progress:
 - Fixed spec normalization so browser sessions can preserve image/viewport dimensions when `canvas` is omitted.
 - Kept `label` on rect/arrow shapes and render labels as part of the same shape in browser and headless output, so moving a base shape does not strand its label.
 - Made browser text rendering honor `fontSize`, `fontFamily`, and `textAlign`.
-- Added an end-to-end CLI browser smoke path using `QUICK_PAINT_NO_OPEN` + `QUICK_PAINT_URL_FILE` to drive `open --spec` through the real command.
+- Added an end-to-end CLI browser smoke path using `QUICKDRAW_NO_OPEN` + `QUICKDRAW_URL_FILE` to drive `open --spec` through the real command.
 - Re-ran `bun run typecheck` and `bun run smoke`; both passed after fixes.
 - Second review gate found saved-PNG double-render on `inspect -> open --spec ... saved.png`, incomplete text alignment semantics, and weak metadata assertions.
-- Fixed CLI image mode to detect when a supplied image already contains the same quick-paint scene and reopen it as a scene-only round trip instead of using the rasterized PNG as a background.
+- Fixed CLI image mode to detect when a supplied image already contains the same quickdraw scene and reopen it as a scene-only round trip instead of using the rasterized PNG as a background.
 - Adjusted browser text rendering/selection bounds so `center` and `right` align around the same `x` anchor semantics as headless SVG output.
 - Strengthened smoke metadata checks to compare shape payloads, not just dimensions/counts, and added CLI-backed tests for `edit <image> --spec` dimension fallback plus saved-PNG reopen source kind.
 - Third review gate found the browser text anchor was still using estimated widths and smoke did not assert `fontFamily`.

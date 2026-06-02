@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { copyImageToClipboard } from "./clipboard";
 import { embedSceneMetadata } from "./png-metadata";
 import { renderSvgToPng } from "./render";
-import type { QuickPaintResult } from "./server";
+import type { QuickdrawResult } from "./server";
 
 export type RenderAdapter = "dot" | "mermaid";
 
@@ -13,7 +13,7 @@ type AdapterRenderOptions = {
   clipboard?: boolean;
 };
 
-export function renderAdapterToPng(adapter: RenderAdapter, source: string, options: AdapterRenderOptions): QuickPaintResult {
+export function renderAdapterToPng(adapter: RenderAdapter, source: string, options: AdapterRenderOptions): QuickdrawResult {
   mkdirSync(dirname(options.outPath), { recursive: true });
   if (adapter === "dot") renderDotToPng(source, options.outPath);
   else renderMermaidToPng(source, options.outPath);
@@ -33,7 +33,7 @@ export function renderAdapterToPng(adapter: RenderAdapter, source: string, optio
 }
 
 function renderDotToPng(source: string, outPath: string) {
-  const tmp = mkdtempSync(join(tmpdir(), "quick-paint-dot-"));
+  const tmp = mkdtempSync(join(tmpdir(), "quickdraw-dot-"));
   const dotPath = join(tmp, "graph.dot");
   const svgPath = join(tmp, "graph.svg");
   try {
@@ -52,7 +52,7 @@ function renderDotToPng(source: string, outPath: string) {
 }
 
 function renderMermaidToPng(source: string, outPath: string) {
-  const tmp = mkdtempSync(join(tmpdir(), "quick-paint-mermaid-"));
+  const tmp = mkdtempSync(join(tmpdir(), "quickdraw-mermaid-"));
   const inputPath = join(tmp, "diagram.mmd");
   try {
     writeFileSync(inputPath, source);

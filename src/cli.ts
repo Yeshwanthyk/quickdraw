@@ -5,7 +5,7 @@ import { renderAdapterToPng, type RenderAdapter } from "./adapter-render";
 import { readClipboardImage } from "./clipboard";
 import { extractSceneMetadata } from "./png-metadata";
 import { renderAsciiToPng, renderSceneToAscii, renderSceneToPng } from "./render";
-import { startQuickPaintServer, type CliMode, type QuickPaintResult } from "./server";
+import { startQuickdrawServer, type CliMode, type QuickdrawResult } from "./server";
 import { focusedAppBundleId, pasteTextIntoApp } from "./sinks";
 import { captureScreenshot } from "./screenshot";
 import { isSceneSpec, normalizeScene, type SceneSpec } from "./spec";
@@ -36,16 +36,16 @@ type CliOptions = BrowserOptions | RenderOptions | InspectOptions;
 
 const usage = [
   "usage:",
-  "  quick-paint [--json] [--paste]",
-  "  quick-paint edit <image> [--spec scene.json] [--json] [--paste]",
-  "  quick-paint paste [--spec scene.json] [--json] [--paste]",
-  "  quick-paint shot [--spec scene.json] [--json] [--paste]",
-  "  quick-paint open [--spec scene.json] [image] [--json] [--paste]",
-  "  quick-paint render --spec scene.json|- --out file.png [--json] [--paste]",
-  "  quick-paint render --spec scene.json|- --ascii [--out file.txt|file.png] [--json] [--paste]",
-  "  quick-paint render --mermaid file.mmd|- --out file.png [--json] [--paste]",
-  "  quick-paint render --dot graph.dot|- --out file.png [--json] [--paste]",
-  "  quick-paint inspect <image.png> [--json]"
+  "  quickdraw [--json] [--paste]",
+  "  quickdraw edit <image> [--spec scene.json] [--json] [--paste]",
+  "  quickdraw paste [--spec scene.json] [--json] [--paste]",
+  "  quickdraw shot [--spec scene.json] [--json] [--paste]",
+  "  quickdraw open [--spec scene.json] [image] [--json] [--paste]",
+  "  quickdraw render --spec scene.json|- --out file.png [--json] [--paste]",
+  "  quickdraw render --spec scene.json|- --ascii [--out file.txt|file.png] [--json] [--paste]",
+  "  quickdraw render --mermaid file.mmd|- --out file.png [--json] [--paste]",
+  "  quickdraw render --dot graph.dot|- --out file.png [--json] [--paste]",
+  "  quickdraw inspect <image.png> [--json]"
 ].join("\n");
 
 function parseArgs(argv: string[]): CliOptions {
@@ -171,7 +171,7 @@ function imageMode(path: string, scene: SceneSpec | undefined): CliMode {
   return { kind: "edit", path, scene };
 }
 
-function printResult(result: QuickPaintResult, json: boolean) {
+function printResult(result: QuickdrawResult, json: boolean) {
   if (json) {
     console.log(JSON.stringify(result, null, 2));
     return;
@@ -188,7 +188,7 @@ async function main() {
   const options = parseArgs(Bun.argv.slice(2));
   if (options.kind === "inspect") {
     const scene = extractSceneMetadata(readFileSync(options.path));
-    if (!scene) throw new Error(`no quick-paint scene metadata found: ${options.path}`);
+    if (!scene) throw new Error(`no quickdraw scene metadata found: ${options.path}`);
     printInspect(scene, options.json);
     return;
   }
@@ -218,8 +218,8 @@ async function main() {
     return;
   }
 
-  const session = await startQuickPaintServer(options.mode, { open: process.env.QUICK_PAINT_NO_OPEN !== "1" });
-  if (process.env.QUICK_PAINT_URL_FILE) writeFileSync(process.env.QUICK_PAINT_URL_FILE, session.url);
+  const session = await startQuickdrawServer(options.mode, { open: process.env.QUICKDRAW_NO_OPEN !== "1" });
+  if (process.env.QUICKDRAW_URL_FILE) writeFileSync(process.env.QUICKDRAW_URL_FILE, session.url);
   try {
     const result = await session.result;
     printResult(result, options.json);
