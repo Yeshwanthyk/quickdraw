@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { chmodSync, existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { renderAdapterToPng, type RenderAdapter } from "./adapter-render";
 import { readClipboardImage } from "./clipboard";
 import { extractSceneMetadata } from "./png-metadata";
@@ -32,7 +32,13 @@ type InspectOptions = {
   json: boolean;
 };
 
-type CliOptions = BrowserOptions | RenderOptions | InspectOptions;
+type UpgradeOptions = { kind: "upgrade" };
+
+type VersionOptions = { kind: "version" };
+
+type CliOptions = BrowserOptions | RenderOptions | InspectOptions | UpgradeOptions | VersionOptions;
+
+const repo = "Yeshwanthyk/quickdraw";
 
 const usage = [
   "usage:",
@@ -45,14 +51,71 @@ const usage = [
   "  quickdraw render --spec scene.json|- --ascii [--out file.txt|file.png] [--json] [--paste]",
   "  quickdraw render --mermaid file.mmd|- --out file.png [--json] [--paste]",
   "  quickdraw render --dot graph.dot|- --out file.png [--json] [--paste]",
-  "  quickdraw inspect <image.png> [--json]"
+  "  quickdraw inspect <image.png> [--json]",
+  "  quickdraw upgrade",
+  "  quickdraw version"
 ].join("\n");
+
+function currentVersion(): string {
+  if (process.env.QUICKDRAW_VERSION) return process.env.QUICKDRAW_VERSION;
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+    if (parsed && typeof parsed === "object" && "version" in parsed && typeof parsed.version === "string") return parsed.version;
+  } catch {
+    // fall through to unknown
+  }
+  return "unknown";
+}
+
+async function latestReleaseTag(): Promise<string | null> {
+  try {
+    const res = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
+      headers: { Accept: "application/vnd.github+json", "User-Agent": "quickdraw-cli" }
+    });
+    if (!res.ok) return null;
+    const body: unknown = await res.json();
+    if (body && typeof body === "object" && "tag_name" in body && typeof body.tag_name === "string") return body.tag_name;
+  } catch {
+    // network failure — treated as unknown
+  }
+  return null;
+}
+
+// The installed command is a self-extracting wrapper that runs from a cache dir, so it exports
+// its own path as QUICKDRAW_SELF for us to overwrite. Dev runs (bun run src/cli.ts) lack it.
+async function upgrade(): Promise<void> {
+  const target = process.env.QUICKDRAW_SELF;
+  if (!target) throw new Error("`quickdraw upgrade` only works on an installed quickdraw binary");
+  const current = currentVersion();
+  const tag = await latestReleaseTag();
+  const res = await fetch(`https://github.com/${repo}/releases/latest/download/quickdraw`, {
+    headers: { "User-Agent": "quickdraw-cli" }
+  });
+  if (!res.ok) throw new Error(`download failed: HTTP ${res.status}`);
+  const payload = Buffer.from(await res.arrayBuffer());
+  if (payload.length < 1024 || !payload.subarray(0, 2).equals(Buffer.from("#!"))) {
+    throw new Error("downloaded asset is not an executable script");
+  }
+  const tmp = join(dirname(target), `.quickdraw-upgrade-${process.pid}`);
+  writeFileSync(tmp, payload);
+  chmodSync(tmp, 0o755);
+  renameSync(tmp, target);
+  console.log(`Upgraded quickdraw${tag ? ` to ${tag}` : ""} (was ${current}) at ${target}`);
+}
 
 function parseArgs(argv: string[]): CliOptions {
   const args = [...argv];
   if (args.length === 1 && (args[0] === "--help" || args[0] === "-h")) {
     console.log(usage);
     process.exit(0);
+  }
+  if (args.length === 1 && (args[0] === "--version" || args[0] === "-v" || args[0] === "version")) {
+    return { kind: "version" };
+  }
+  if (args[0] === "upgrade") {
+    args.shift();
+    rejectExtra(args);
+    return { kind: "upgrade" };
   }
   const json = takeFlag(args, "--json");
   const paste = takeFlag(args, "--paste");
@@ -186,6 +249,14 @@ function printInspect(scene: unknown, json: boolean) {
 
 async function main() {
   const options = parseArgs(Bun.argv.slice(2));
+  if (options.kind === "version") {
+    console.log(currentVersion());
+    return;
+  }
+  if (options.kind === "upgrade") {
+    await upgrade();
+    return;
+  }
   if (options.kind === "inspect") {
     const scene = extractSceneMetadata(readFileSync(options.path));
     if (!scene) throw new Error(`no quickdraw scene metadata found: ${options.path}`);

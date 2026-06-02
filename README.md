@@ -29,7 +29,19 @@ curl -L -o ~/commands/quickdraw \
 chmod +x ~/commands/quickdraw
 ```
 
-The release asset to upload is `dist/quickdraw` (built via `bun run build:command dist/quickdraw`). While the repository is private, the `curl` commands above need an authenticated request — download the asset with `gh release download <tag> -R Yeshwanthyk/quickdraw -p quickdraw -O ~/commands/quickdraw` instead.
+## Upgrade
+
+Once installed, update in place to the latest release:
+
+```bash
+quickdraw upgrade
+```
+
+This downloads the latest release asset and replaces the running executable. Check your version with `quickdraw version`.
+
+## Publishing a release
+
+The release asset is `dist/quickdraw`, built via `bun run build:command dist/quickdraw`, then attached to a GitHub Release (e.g. `gh release create v0.1.2 dist/quickdraw`). `quickdraw upgrade` and the `curl` commands above pull from `releases/latest`.
 
 ## Install the agent skill
 

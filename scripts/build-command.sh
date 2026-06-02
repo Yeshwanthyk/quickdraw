@@ -23,12 +23,16 @@ tar -czf "$payload" \
 
 shasum -a 256 "$payload" | awk '{print $1}' > "$hash_file"
 hash=$(cat "$hash_file")
+version=$(grep -m1 '"version"' package.json | sed -E 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')
 
 mkdir -p "${out:h}"
 cat > "$out" <<EOF
 #!/usr/bin/env zsh
 set -euo pipefail
 
+# Absolute path to this wrapper, captured before any cd so \`quickdraw upgrade\` can replace it.
+export QUICKDRAW_SELF="\${0:A}"
+export QUICKDRAW_VERSION="$version"
 hash="$hash"
 cache="\${XDG_CACHE_HOME:-\$HOME/.cache}/quickdraw/\$hash"
 payload="\$(mktemp -t quickdraw.XXXXXX.tar.gz)"
