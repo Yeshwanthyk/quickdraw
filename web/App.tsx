@@ -4,8 +4,11 @@ import { Arrow, Group, Image as KonvaImage, Layer, Line, Rect, Stage, Text as Ko
 import type Konva from "konva";
 import { createHistory, pushHistory, redoHistory, undoHistory } from "./canvas/history";
 import { TextEditor, type TextDraft } from "./canvas/TextEditor";
+import { GridMode } from "./grid/GridMode";
+import { AppearancePanel, defaultGridStyle, type GridStyle } from "./grid/AppearancePanel";
+import { sceneToAscii } from "../src/ascii";
 import { useImageSource } from "./canvas/useImageSource";
-import { normalizeScene, sceneFromShapes } from "../src/spec";
+import { bindingFor, normalizeScene, reflowBoundArrows, sceneFromShapes } from "../src/spec";
 import { layoutText } from "../src/text-layout";
 import type { DrawColor, Shape, TextShape, Tool } from "./tools/types";
 
@@ -40,6 +43,10 @@ type TransformPreview =
 
 function shapeId() {
   return crypto.randomUUID();
+}
+
+function clampZoom(zoom: number) {
+  return Math.min(4, Math.max(0.2, zoom));
 }
 
 function normalizeRect(shape: Extract<Shape, { type: "rect" }>) {
@@ -176,6 +183,9 @@ export default function App() {
   const source = useImageSource();
   const [canvasImage, setCanvasImage] = useState<HTMLImageElement | null>(null);
   const [canvasSize, setCanvasSize] = useState({ width: 960, height: 620 });
+  const [mode, setMode] = useState<"paint" | "grid">("paint");
+  const [gridStyle, setGridStyle] = useState<GridStyle>(defaultGridStyle);
+  const [paintView, setPaintView] = useState({ x: 0, y: 0, zoom: 1 });
   const [tool, setTool] = useState<Tool>("select");
   const [color, setColor] = useState<DrawColor>("#e11d48");
   const [strokeWidth, setStrokeWidth] = useState(4);
@@ -192,6 +202,13 @@ export default function App() {
   const stageRef = useRef<Konva.Stage>(null);
   const rafRef = useRef<number | null>(null);
   const draftRef = useRef<Shape | null>(null);
+  const previewRafRef = useRef<number | null>(null);
+  const previewRef = useRef<TransformPreview | null>(null);
+  const paintViewRef = useRef(paintView);
+  paintViewRef.current = paintView;
+  const paintWorkspaceRef = useRef<HTMLElement>(null);
+  const panRef = useRef<{ sx: number; sy: number; vx: number; vy: number } | null>(null);
+  const spaceRef = useRef(false);
 
   const shapes = history.present;
   const canUndo = history.past.length > 0;
@@ -206,6 +223,7 @@ export default function App() {
     setCanvasSize(scene?.canvas ?? { width: source.width, height: source.height });
     setHistory(createHistory<Shape[]>(scene?.shapes ?? []));
     setSelectedIds([]);
+    setPaintView({ x: 0, y: 0, zoom: 1 });
   }, [source]);
 
   const pointer = useCallback(() => {
@@ -214,11 +232,25 @@ export default function App() {
   }, []);
 
   const commit = useCallback((shape: Shape) => {
-    const finalShape = shape.type === "rect" ? normalizeRect(shape) : shape;
-    setHistory((current) => pushHistory(current, [...current.present, finalShape]));
+    setHistory((current) => {
+      let finalShape: Shape = shape.type === "rect" ? normalizeRect(shape) : shape;
+      if (finalShape.type === "arrow") {
+        const points = finalShape.points;
+        const startBinding = bindingFor([points[0], points[1]], current.present);
+        const endBinding = bindingFor([points[points.length - 2], points[points.length - 1]], current.present);
+        finalShape = { ...finalShape, ...(startBinding ? { startBinding } : {}), ...(endBinding ? { endBinding } : {}) };
+      }
+      return pushHistory(current, [...current.present, finalShape]);
+    });
   }, []);
 
   const onPointerDown = useCallback((event: Konva.KonvaEventObject<PointerEvent>) => {
+    // Space-drag (or middle button) pans the infinite workspace.
+    if (spaceRef.current || event.evt.button === 1) {
+      const v = paintViewRef.current;
+      panRef.current = { sx: event.evt.clientX, sy: event.evt.clientY, vx: v.x, vy: v.y };
+      return;
+    }
     if (tool === "select") {
       if (event.target === event.target.getStage() || event.target.name() === "canvas-background" || event.target.name() === "canvas-image") setSelectedIds([]);
       return;
@@ -260,7 +292,12 @@ export default function App() {
     }
   }, [color, fontFamily, fontSize, pointer, strokeWidth, textAlign, tool]);
 
-  const onPointerMove = useCallback(() => {
+  const onPointerMove = useCallback((event: Konva.KonvaEventObject<PointerEvent>) => {
+    if (panRef.current) {
+      const p = panRef.current;
+      setPaintView((v) => ({ ...v, x: p.vx + (event.evt.clientX - p.sx), y: p.vy + (event.evt.clientY - p.sy) }));
+      return;
+    }
     const currentDraft = draftRef.current ?? draft;
     if (!isDrawing || !currentDraft) return;
     const point = pointer();
@@ -281,6 +318,7 @@ export default function App() {
   }, [draft, isDrawing, pointer]);
 
   const onPointerUp = useCallback(() => {
+    if (panRef.current) { panRef.current = null; return; }
     const finalDraft = draftRef.current ?? draft;
     if (rafRef.current !== null) window.cancelAnimationFrame(rafRef.current);
     rafRef.current = null;
@@ -292,6 +330,73 @@ export default function App() {
 
   const undo = useCallback(() => setHistory(undoHistory), []);
   const redo = useCallback(() => setHistory(redoHistory), []);
+
+  // Coalesce high-frequency transform previews (move/resize/rotate/arrow-point) into one
+  // paint per frame, mirroring the pen-draw rAF throttle above.
+  const scheduleTransformPreview = useCallback((next: TransformPreview) => {
+    previewRef.current = next;
+    if (previewRafRef.current !== null) return;
+    previewRafRef.current = window.requestAnimationFrame(() => {
+      previewRafRef.current = null;
+      setTransformPreview(previewRef.current);
+    });
+  }, []);
+
+  const clearTransformPreview = useCallback(() => {
+    if (previewRafRef.current !== null) window.cancelAnimationFrame(previewRafRef.current);
+    previewRafRef.current = null;
+    previewRef.current = null;
+    setTransformPreview(null);
+  }, []);
+
+  useEffect(() => () => {
+    if (rafRef.current !== null) window.cancelAnimationFrame(rafRef.current);
+    if (previewRafRef.current !== null) window.cancelAnimationFrame(previewRafRef.current);
+  }, []);
+
+  // Spacebar held = pan modifier for the infinite paint workspace.
+  useEffect(() => {
+    const isTyping = (target: EventTarget | null) => target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
+    const setCursor = (value: string) => { if (paintWorkspaceRef.current) paintWorkspaceRef.current.style.cursor = value; };
+    const down = (event: KeyboardEvent) => {
+      if (event.code === "Space" && !isTyping(event.target)) { event.preventDefault(); spaceRef.current = true; setCursor("grab"); }
+    };
+    const up = (event: KeyboardEvent) => { if (event.code === "Space") { spaceRef.current = false; setCursor(""); } };
+    // A pan can end with the pointer outside the Stage; clear it globally so the next draw is clean.
+    const endPan = () => { panRef.current = null; };
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    window.addEventListener("pointerup", endPan);
+    window.addEventListener("pointercancel", endPan);
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+      window.removeEventListener("pointerup", endPan);
+      window.removeEventListener("pointercancel", endPan);
+    };
+  }, []);
+
+  // Wheel: pan by default, zoom toward the cursor with cmd/ctrl. Native listener for preventDefault.
+  useEffect(() => {
+    if (mode !== "paint") return;
+    const el = paintWorkspaceRef.current;
+    if (!el) return;
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      const v = paintViewRef.current;
+      if (event.ctrlKey || event.metaKey) {
+        const rect = el.getBoundingClientRect();
+        const mx = event.clientX - rect.left;
+        const my = event.clientY - rect.top;
+        const zoom = clampZoom(v.zoom * Math.exp(-event.deltaY * 0.0015));
+        setPaintView({ zoom, x: mx - ((mx - v.x) / v.zoom) * zoom, y: my - ((my - v.y) / v.zoom) * zoom });
+      } else {
+        setPaintView({ ...v, x: v.x - event.deltaX, y: v.y - event.deltaY });
+      }
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [mode, source]);
 
   const updateFontSize = useCallback((next: number) => {
     setFontSize(next);
@@ -343,6 +448,18 @@ export default function App() {
 
   const cancelText = useCallback(() => setTextDraft(null), []);
 
+  const [asciiCopied, setAsciiCopied] = useState(false);
+  const copyAscii = useCallback(async () => {
+    const text = sceneToAscii({ canvas: { width: canvasSize.width, height: canvasSize.height, background: "#ffffff" }, shapes });
+    try {
+      await navigator.clipboard.writeText(text);
+      setAsciiCopied(true);
+      window.setTimeout(() => setAsciiCopied(false), 1500);
+    } catch {
+      setAsciiCopied(false);
+    }
+  }, [canvasSize.height, canvasSize.width, shapes]);
+
   const editText = useCallback((shape: TextShape) => {
     setTextDraft({
       id: shape.id,
@@ -369,7 +486,11 @@ export default function App() {
   const moveShapes = useCallback((ids: string[], dx: number, dy: number) => {
     if (dx === 0 && dy === 0) return;
     const selected = new Set(ids);
-    setHistory((current) => pushHistory(current, current.present.map((shape) => selected.has(shape.id) ? translateShape(shape, dx, dy) : shape)));
+    // Reflow arrows whose target moved; arrows in the moved set already translate with it.
+    setHistory((current) => pushHistory(current, reflowBoundArrows(
+      current.present.map((shape) => selected.has(shape.id) ? translateShape(shape, dx, dy) : shape),
+      selected
+    )));
   }, []);
 
   const resizeSelected = useCallback((handle: ResizeHandle, point: { x: number; y: number }, keepAspect: boolean) => {
@@ -379,9 +500,9 @@ export default function App() {
     if (!shape) return;
     const from = shapeBounds(shape);
     const to = resizeBounds(from, handle, point, keepAspect);
-    setHistory((current) => pushHistory(current, current.present.map((item) => item.id === id ? resizeShape(item, from, to) : item)));
-    setTransformPreview(null);
-  }, [selectedIds, shapes]);
+    setHistory((current) => pushHistory(current, reflowBoundArrows(current.present.map((item) => item.id === id ? resizeShape(item, from, to) : item))));
+    clearTransformPreview();
+  }, [clearTransformPreview, selectedIds, shapes]);
 
   const previewResizeSelected = useCallback((handle: ResizeHandle, point: { x: number; y: number }, keepAspect: boolean) => {
     if (selectedIds.length !== 1) return;
@@ -389,8 +510,8 @@ export default function App() {
     const shape = shapes.find((item) => item.id === id);
     if (!shape) return;
     const from = shapeBounds(shape);
-    setTransformPreview({ kind: "resize", id, from, to: resizeBounds(from, handle, point, keepAspect) });
-  }, [selectedIds, shapes]);
+    scheduleTransformPreview({ kind: "resize", id, from, to: resizeBounds(from, handle, point, keepAspect) });
+  }, [scheduleTransformPreview, selectedIds, shapes]);
 
   const rotateSelected = useCallback((point: { x: number; y: number }) => {
     if (selectedIds.length !== 1) return;
@@ -401,8 +522,8 @@ export default function App() {
     const center = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
     const angle = Math.atan2(point.y - center.y, point.x - center.x) * 180 / Math.PI + 90;
     setHistory((current) => pushHistory(current, current.present.map((item) => item.id === id ? rotateShape(item, angle) : item)));
-    setTransformPreview(null);
-  }, [selectedIds, shapes]);
+    clearTransformPreview();
+  }, [clearTransformPreview, selectedIds, shapes]);
 
   const previewRotateSelected = useCallback((point: { x: number; y: number }) => {
     if (selectedIds.length !== 1) return;
@@ -411,25 +532,33 @@ export default function App() {
     if (!shape || shape.type === "pen" || shape.type === "arrow") return;
     const bounds = shapeBounds(shape);
     const center = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
-    setTransformPreview({ kind: "rotate", id, angle: Math.atan2(point.y - center.y, point.x - center.x) * 180 / Math.PI + 90 });
-  }, [selectedIds, shapes]);
+    scheduleTransformPreview({ kind: "rotate", id, angle: Math.atan2(point.y - center.y, point.x - center.x) * 180 / Math.PI + 90 });
+  }, [scheduleTransformPreview, selectedIds, shapes]);
 
   const updateSelectedArrowPoint = useCallback((pointIndex: number, point: { x: number; y: number }) => {
     if (selectedIds.length !== 1) return;
     const id = selectedIds[0];
-    setHistory((current) => pushHistory(current, current.present.map((shape) => (
-      shape.id === id && shape.type === "arrow" ? updateArrowPoint(shape, pointIndex, point) : shape
-    ))));
-    setTransformPreview(null);
-  }, [selectedIds]);
+    setHistory((current) => pushHistory(current, current.present.map((shape) => {
+      if (shape.id !== id || shape.type !== "arrow") return shape;
+      const updated = updateArrowPoint(shape, pointIndex, point);
+      // Only the true endpoints carry bindings; a middle control point leaves both intact.
+      const isStart = pointIndex === 0;
+      const isEnd = pointIndex === shape.points.length / 2 - 1;
+      if (!isStart && !isEnd) return updated;
+      // Dropping an endpoint on a shape (re)binds it; dropping in empty space clears it.
+      const binding = bindingFor([point.x, point.y], current.present.filter((item) => item.id !== id));
+      return { ...updated, startBinding: isStart ? binding : updated.startBinding, endBinding: isEnd ? binding : updated.endBinding };
+    })));
+    clearTransformPreview();
+  }, [clearTransformPreview, selectedIds]);
 
   const previewSelectedArrowPoint = useCallback((pointIndex: number, point: { x: number; y: number }) => {
     if (selectedIds.length !== 1) return;
     const id = selectedIds[0];
     const shape = shapes.find((item) => item.id === id);
     if (!shape || shape.type !== "arrow") return;
-    setTransformPreview({ kind: "arrow-points", id, points: updateArrowPoint(shape, pointIndex, point).points });
-  }, [selectedIds, shapes]);
+    scheduleTransformPreview({ kind: "arrow-points", id, points: updateArrowPoint(shape, pointIndex, point).points });
+  }, [scheduleTransformPreview, selectedIds, shapes]);
 
   const done = useCallback(async () => {
     const stage = stageRef.current;
@@ -480,6 +609,7 @@ export default function App() {
         setHistory(createHistory<Shape[]>([]));
         setDraft(null);
         setSelectedIds([]);
+        setPaintView({ x: 0, y: 0, zoom: 1 });
       };
       image.src = String(reader.result);
     };
@@ -563,15 +693,23 @@ export default function App() {
     });
   }, [draft, shapes, textDraft, transformPreview]);
   const selectedShape = selectedIds.length === 1 ? rendered.find((shape) => shape.id === selectedIds[0]) : undefined;
+  // Text styling controls only matter when authoring/selecting text — keep them out of
+  // the toolbar otherwise so it stays on one row.
+  const textContext = mode === "paint" && (tool === "text" || textDraft !== null || selectedShape?.type === "text");
 
   if (!source) return <div className="loading">Loading quick-paint...</div>;
 
   return (
     <main className="shell">
       <div className="toolbar" role="toolbar" aria-label="quick-paint tools">
+        <div className="segmented" role="group" aria-label="Editor mode">
+          <SegmentButton active={mode === "paint"} title="Paint mode" onClick={() => setMode("paint")}>Paint</SegmentButton>
+          <SegmentButton active={mode === "grid"} title="Grid mode (ASCII)" onClick={() => setMode("grid")}>Grid</SegmentButton>
+        </div>
+        <span className="divider" />
         <ToolButton active={tool === "select"} title="Select (1)" onClick={() => setTool("select")}><MousePointer2 size={17} /></ToolButton>
-        <ToolButton active={tool === "pen"} title="Pen (2)" onClick={() => setTool("pen")}><PenLine size={17} /></ToolButton>
-        <ToolButton active={tool === "highlighter"} title="Highlighter (3)" onClick={() => setTool("highlighter")}><Highlighter size={17} /></ToolButton>
+        {mode === "paint" && <ToolButton active={tool === "pen"} title="Pen (2)" onClick={() => setTool("pen")}><PenLine size={17} /></ToolButton>}
+        {mode === "paint" && <ToolButton active={tool === "highlighter"} title="Highlighter (3)" onClick={() => setTool("highlighter")}><Highlighter size={17} /></ToolButton>}
         <ToolButton active={tool === "arrow"} title="Arrow (4)" onClick={() => setTool("arrow")}><ArrowRight size={17} /></ToolButton>
         <ToolButton active={tool === "rect"} title="Rectangle (5)" onClick={() => setTool("rect")}><Square size={17} /></ToolButton>
         <ToolButton active={tool === "text"} title="Text (6)" onClick={() => setTool("text")}><Type size={17} /></ToolButton>
@@ -582,42 +720,72 @@ export default function App() {
         <ToolButton disabled={selectedIds.length === 0} title="Delete selected" onClick={deleteSelected}><Trash2 size={17} /></ToolButton>
         <ToolButton disabled={selectedIds.length === 0} title="Send to back" onClick={sendSelectedToBack}><SendToBack size={17} /></ToolButton>
         <ToolButton disabled={selectedIds.length === 0} title="Bring to front" onClick={bringSelectedToFront}><BringToFront size={17} /></ToolButton>
-        <span className="divider" />
-        <div className="swatches">
-          {colors.map((swatch) => (
-            <button
-              aria-label={`Color ${swatch}`}
-              className={swatch === color ? "swatch active" : "swatch"}
-              key={swatch}
-              onClick={() => setColor(swatch)}
-              style={{ background: swatch }}
-              title={swatch}
-            />
-          ))}
+        {mode === "paint" && (
+          <>
+            <span className="divider" />
+            <div className="swatches">
+              {colors.map((swatch) => (
+                <button
+                  aria-label={`Color ${swatch}`}
+                  className={swatch === color ? "swatch active" : "swatch"}
+                  key={swatch}
+                  onClick={() => setColor(swatch)}
+                  style={{ background: swatch }}
+                  title={swatch}
+                />
+              ))}
+            </div>
+            <select aria-label="Stroke width" value={strokeWidth} onChange={(event) => setStrokeWidth(Number(event.target.value))}>
+              {widths.map((width) => <option key={width} value={width}>{width}px</option>)}
+            </select>
+            {textContext && (
+              <>
+                <span className="divider" />
+                <select aria-label="Font size" value={textDraft?.fontSize ?? fontSize} onChange={(event) => updateFontSize(Number(event.target.value))}>
+                  {fontSizes.map((size) => <option key={size} value={size}>{size}px</option>)}
+                </select>
+                <select aria-label="Font family" value={textDraft?.fontFamily ?? fontFamily ?? ""} onChange={(event) => updateFontFamily(event.target.value || undefined)}>
+                  {fontFamilies.map((font) => <option key={font.label} value={font.value ?? ""}>{font.label}</option>)}
+                </select>
+                <div className="segmented" role="group" aria-label="Text alignment">
+                  <SegmentButton active={(textDraft?.textAlign ?? textAlign) === "left"} title="Align left" onMouseDown={(event) => event.preventDefault()} onClick={() => updateTextAlign("left")}><AlignLeft size={16} /></SegmentButton>
+                  <SegmentButton active={(textDraft?.textAlign ?? textAlign) === "center"} title="Align center" onMouseDown={(event) => event.preventDefault()} onClick={() => updateTextAlign("center")}><AlignCenter size={16} /></SegmentButton>
+                  <SegmentButton active={(textDraft?.textAlign ?? textAlign) === "right"} title="Align right" onMouseDown={(event) => event.preventDefault()} onClick={() => updateTextAlign("right")}><AlignRight size={16} /></SegmentButton>
+                </div>
+              </>
+            )}
+          </>
+        )}
+        <div className="toolbarRight">
+          <span className="meta">{canvasSize.width} × {canvasSize.height}{mode === "grid" ? " · ascii" : ""}</span>
+          {mode === "grid" ? (
+            <>
+              <button className="action subtle" onClick={cancel}><X size={16} />Close</button>
+              <button className="action done" onClick={copyAscii} title="Copy as ASCII text"><Check size={16} />{asciiCopied ? "Copied" : "Copy ASCII"}</button>
+            </>
+          ) : (
+            <>
+              <button className="action subtle" onClick={cancel}><X size={16} />Cancel</button>
+              {saveState === "error" && <span className="saveError">Save failed</span>}
+              <button className="action done" disabled={saveState === "saving"} onClick={done}>
+                <Check size={16} />{saveState === "saving" ? "Saving" : "Save"}
+              </button>
+            </>
+          )}
         </div>
-        <select aria-label="Stroke width" value={strokeWidth} onChange={(event) => setStrokeWidth(Number(event.target.value))}>
-          {widths.map((width) => <option key={width} value={width}>{width}px</option>)}
-        </select>
-        <select aria-label="Font size" value={textDraft?.fontSize ?? fontSize} onChange={(event) => updateFontSize(Number(event.target.value))}>
-          {fontSizes.map((size) => <option key={size} value={size}>{size}px</option>)}
-        </select>
-        <select aria-label="Font family" value={textDraft?.fontFamily ?? fontFamily ?? ""} onChange={(event) => updateFontFamily(event.target.value || undefined)}>
-          {fontFamilies.map((font) => <option key={font.label} value={font.value ?? ""}>{font.label}</option>)}
-        </select>
-        <SegmentButton active={(textDraft?.textAlign ?? textAlign) === "left"} title="Align left" onMouseDown={(event) => event.preventDefault()} onClick={() => updateTextAlign("left")}><AlignLeft size={16} /></SegmentButton>
-        <SegmentButton active={(textDraft?.textAlign ?? textAlign) === "center"} title="Align center" onMouseDown={(event) => event.preventDefault()} onClick={() => updateTextAlign("center")}><AlignCenter size={16} /></SegmentButton>
-        <SegmentButton active={(textDraft?.textAlign ?? textAlign) === "right"} title="Align right" onMouseDown={(event) => event.preventDefault()} onClick={() => updateTextAlign("right")}><AlignRight size={16} /></SegmentButton>
-        <span className="spacer" />
-        <span className="meta"><MousePointer2 size={14} /> {canvasSize.width}x{canvasSize.height}</span>
-        <button className="action subtle" onClick={cancel}><X size={16} />Cancel</button>
-        {saveState === "error" && <span className="saveError">Save failed</span>}
-        <button className="action done" disabled={saveState === "saving"} onClick={done}>
-          <Check size={16} />{saveState === "saving" ? "Saving" : "Save"}
-        </button>
       </div>
 
-      <section className="canvasRail">
-        <div className="canvasFrame" style={{ width: canvasSize.width, height: canvasSize.height }}>
+      {mode === "grid" ? (
+        <>
+          <GridMode canvasSize={canvasSize} shapes={shapes} tool={tool} color={color} strokeWidth={strokeWidth} style={gridStyle} selectedIds={selectedIds} onAddShape={commit} onSelect={setSelectedIds} onMove={moveShapes} />
+          <AppearancePanel style={gridStyle} onChange={setGridStyle} />
+        </>
+      ) : (
+      <section className="paintWorkspace" ref={paintWorkspaceRef}>
+        <div
+          className="canvasFrame"
+          style={{ width: canvasSize.width, height: canvasSize.height, transform: `translate(${paintView.x}px, ${paintView.y}px) scale(${paintView.zoom})`, transformOrigin: "0 0" }}
+        >
           <Stage
             ref={stageRef}
             width={canvasSize.width}
@@ -669,12 +837,12 @@ export default function App() {
                   onDragEnd={(event) => {
                     const { x, y } = event.target.position();
                     event.target.position({ x: 0, y: 0 });
-                    setTransformPreview(null);
+                    clearTransformPreview();
                     moveShapes(selectedIds.includes(shape.id) ? selectedIds : [shape.id], x, y);
                   }}
                   onDragMove={(event) => {
                     const { x, y } = event.target.position();
-                    setTransformPreview({ kind: "move", ids: selectedIds.includes(shape.id) ? selectedIds : [shape.id], dx: x, dy: y });
+                    scheduleTransformPreview({ kind: "move", ids: selectedIds.includes(shape.id) ? selectedIds : [shape.id], dx: x, dy: y });
                   }}
                   onMouseDown={(event) => {
                     if (tool !== "select") return;
@@ -703,6 +871,7 @@ export default function App() {
           {textDraft && <TextEditor draft={textDraft} metrics={textMetrics({ ...textDraft, id: textDraft.id ?? "draft", type: "text" })} onChange={setTextDraft} onCommit={commitText} onCancel={cancelText} />}
         </div>
       </section>
+      )}
     </main>
   );
 }

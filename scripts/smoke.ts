@@ -5,7 +5,7 @@ import { chromium, type Locator, type Page } from "@playwright/test";
 import { readClipboardImage } from "../src/clipboard";
 import { extractSceneMetadata } from "../src/png-metadata";
 import { startQuickPaintServer, type QuickPaintResult } from "../src/server";
-import { normalizeScene, type SceneSpec } from "../src/spec";
+import { normalizeScene, type SceneRectSpec, type SceneSpec } from "../src/spec";
 import { layoutText } from "../src/text-layout";
 
 declare global {
@@ -423,6 +423,187 @@ async function smokeArrowEndpointEditor(browser: Awaited<ReturnType<typeof chrom
   }
 }
 
+async function smokeGridDraw(browser: Awaited<ReturnType<typeof chromium.launch>>) {
+  const session = await startQuickPaintServer({ kind: "blank" }, { open: false });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1400, height: 1000 } });
+    await page.goto(session.url);
+    await page.getByRole("button", { name: "Grid mode (ASCII)" }).click();
+    // Appearance panel: pick double border + dense fill, applied to the next shape.
+    await page.getByRole("button", { name: "Double", exact: true }).click();
+    await page.getByRole("button", { name: "Dense", exact: true }).click();
+    await page.getByRole("button", { name: "Rectangle (5)" }).click();
+    const canvas = page.locator(".gridCanvas");
+    const box = await canvas.boundingBox();
+    if (!box) throw new Error("missing grid canvas");
+    // Grid view at default pan (24,24) + 20px ruler: cell (c,r) -> (24 + c*12, 44 + r*22).
+    await page.mouse.move(box.x + 24 + 5 * 12, box.y + 44 + 3 * 22);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 24 + 15 * 12, box.y + 44 + 8 * 22);
+    await page.mouse.up();
+    await page.getByRole("button", { name: "Paint mode" }).click();
+    await page.getByRole("button", { name: "Save" }).click();
+    const result = await session.result;
+    verifyResult(result);
+    const scene = normalizeScene(extractSceneMetadata(readFileSync(result.path)));
+    const rect = scene.shapes.find((shape) => shape.type === "rect");
+    // cells -> scene px via 8x16: x=5*8, y=3*16, w=10*8, h=5*16; plus panel styles.
+    if (!rect || rect.type !== "rect" || rect.x !== 40 || rect.y !== 48 || rect.width !== 80 || rect.height !== 80) {
+      throw new Error(`grid draw did not snap rect to cells: ${JSON.stringify(rect)}`);
+    }
+    if (rect.strokeStyle !== "double" || rect.fillStyle !== "dense") {
+      throw new Error(`appearance panel style not applied to grid shape: ${JSON.stringify(rect)}`);
+    }
+    await page.close();
+    return result;
+  } finally {
+    session.stop();
+  }
+}
+
+async function smokeGridEdit(browser: Awaited<ReturnType<typeof chromium.launch>>) {
+  const spec: SceneSpec = { canvas: { width: 640, height: 400 }, shapes: [{ id: "r", type: "rect", x: 32, y: 48, width: 64, height: 64, color: "blue", label: "box" }] };
+  const session = await startQuickPaintServer({ kind: "blank", scene: spec }, { open: false });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1400, height: 1000 } });
+    await page.goto(session.url);
+    await page.getByRole("button", { name: "Grid mode (ASCII)" }).click();
+    await page.getByRole("button", { name: "Select (1)" }).click();
+    const box = await page.locator(".gridCanvas").boundingBox();
+    if (!box) throw new Error("missing grid canvas");
+    // rect spans cells (4,3)-(12,7); click inside (8,5) and drag to (11,8): +3 col, +3 row.
+    await page.mouse.move(box.x + 24 + 8 * 12, box.y + 44 + 5 * 22);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 24 + 11 * 12, box.y + 44 + 8 * 22);
+    await page.mouse.up();
+    await page.getByRole("button", { name: "Paint mode" }).click();
+    await page.getByRole("button", { name: "Save" }).click();
+    const result = await session.result;
+    verifyResult(result);
+    const scene = normalizeScene(extractSceneMetadata(readFileSync(result.path)));
+    const rect = scene.shapes.find((shape) => shape.id === "r");
+    // +3 cells -> +24px x, +48px y: x 32->56, y 48->96.
+    if (!rect || rect.type !== "rect" || rect.x !== 56 || rect.y !== 96) {
+      throw new Error(`grid select+move did not translate by whole cells: ${JSON.stringify(rect)}`);
+    }
+    await page.close();
+    return result;
+  } finally {
+    session.stop();
+  }
+}
+
+async function smokeGridText(browser: Awaited<ReturnType<typeof chromium.launch>>) {
+  const session = await startQuickPaintServer({ kind: "blank" }, { open: false });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1200, height: 800 } });
+    await page.goto(session.url);
+    await page.getByRole("button", { name: "Grid mode (ASCII)" }).click();
+    await page.getByRole("button", { name: "Text (6)" }).click();
+    const box = await page.locator(".gridCanvas").boundingBox();
+    if (!box) throw new Error("missing grid canvas");
+    // Escape must cancel without committing.
+    await page.mouse.click(box.x + 24 + 5 * 12, box.y + 44 + 2 * 22);
+    await page.getByRole("textbox", { name: "Grid text" }).fill("discard");
+    await page.keyboard.press("Escape");
+    // Enter commits at the clicked cell.
+    await page.mouse.click(box.x + 24 + 10 * 12, box.y + 44 + 4 * 22);
+    await page.getByRole("textbox", { name: "Grid text" }).fill("hello");
+    await page.keyboard.press("Enter");
+    await page.getByRole("button", { name: "Paint mode" }).click();
+    await page.getByRole("button", { name: "Save" }).click();
+    const result = await session.result;
+    verifyResult(result);
+    const scene = normalizeScene(extractSceneMetadata(readFileSync(result.path)));
+    const texts = scene.shapes.filter((shape) => shape.type === "text");
+    const text = texts[0];
+    // cell (10,4) -> x 80, y 64; Escape draft must not have committed.
+    if (texts.length !== 1 || !text || text.type !== "text" || text.text !== "hello" || text.x !== 80 || text.y !== 64) {
+      throw new Error(`grid text tool (escape-cancel / enter-commit) wrong: ${JSON.stringify(texts)}`);
+    }
+    await page.close();
+    return result;
+  } finally {
+    session.stop();
+  }
+}
+
+async function smokeGridCopyAscii(browser: Awaited<ReturnType<typeof chromium.launch>>) {
+  const spec: SceneSpec = { canvas: { width: 320, height: 160 }, shapes: [{ type: "rect", x: 24, y: 24, width: 96, height: 64, color: "blue", label: "API" }] };
+  const session = await startQuickPaintServer({ kind: "blank", scene: spec }, { open: false });
+  const context = await browser.newContext({ viewport: { width: 1200, height: 800 }, permissions: ["clipboard-read", "clipboard-write"] });
+  try {
+    const page = await context.newPage();
+    await page.goto(session.url);
+    await page.getByRole("button", { name: "Grid mode (ASCII)" }).click();
+    await page.getByRole("button", { name: "Copy ASCII" }).click();
+    const clip = await page.evaluate(() => navigator.clipboard.readText());
+    if (!clip.includes("┌") || !clip.includes("│") || !clip.includes("API")) {
+      throw new Error(`Copy ASCII did not put a box-drawing diagram on the clipboard:\n${clip}`);
+    }
+    await page.close();
+  } finally {
+    await context.close();
+    session.stop();
+  }
+}
+
+async function smokeArrowBinding(browser: Awaited<ReturnType<typeof chromium.launch>>) {
+  const spec: SceneSpec = {
+    canvas: { width: 380, height: 240 },
+    shapes: [
+      { id: "box", type: "rect", x: 140, y: 70, width: 90, height: 70, color: "blue", label: "Bind" }
+    ]
+  };
+  const session = await startQuickPaintServer({ kind: "blank", scene: spec }, { open: false });
+  try {
+    const page = await browser.newPage({ viewport: { width: 820, height: 560 } });
+    await page.goto(session.url);
+    const stage = page.locator(".stage canvas").first();
+    const stageBox = await stage.boundingBox();
+    if (!stageBox) throw new Error("missing arrow binding stage");
+
+    // Draw an arrow whose end lands at the rect center (185,105) → end binds to the rect.
+    await page.getByRole("button", { name: "Arrow (4)" }).click();
+    await page.mouse.move(stageBox.x + 50, stageBox.y + 200);
+    await page.mouse.down();
+    await page.mouse.move(stageBox.x + 120, stageBox.y + 150);
+    await page.mouse.move(stageBox.x + 185, stageBox.y + 105);
+    await page.mouse.up();
+
+    // Select the rect (corner clear of the arrow) and nudge it +25,+25.
+    await page.getByRole("button", { name: "Select (1)" }).click();
+    await clickStage(page, stage, 218, 130);
+    for (let step = 0; step < 5; step += 1) await page.keyboard.press("Shift+ArrowRight");
+    for (let step = 0; step < 5; step += 1) await page.keyboard.press("Shift+ArrowDown");
+
+    await page.getByRole("button", { name: "Save" }).click();
+    const result = await session.result;
+    verifyResult(result);
+    const scene = normalizeScene(extractSceneMetadata(readFileSync(result.path)));
+    const arrow = scene.shapes.find((shape) => shape.type === "arrow");
+    if (!arrow || arrow.type !== "arrow") throw new Error("arrow binding smoke lost arrow");
+    if (arrow.endBinding?.shapeId !== "box") {
+      throw new Error(`arrow end did not bind to rect on draw: ${JSON.stringify(arrow)}`);
+    }
+    if (arrow.startBinding) {
+      throw new Error(`free arrow start should not bind: ${JSON.stringify(arrow.startBinding)}`);
+    }
+    const [x1, y1, x2, y2] = arrow.points;
+    // Rect moved +25,+25 → new center ~ (210,130); the bound end must follow it.
+    if (Math.abs(x2 - 210) > 12 || Math.abs(y2 - 130) > 12) {
+      throw new Error(`bound arrow end did not follow moved rect: ${JSON.stringify(arrow.points)}`);
+    }
+    if (Math.abs(x1 - 50) > 6 || Math.abs(y1 - 200) > 6) {
+      throw new Error(`free arrow start drifted: ${JSON.stringify(arrow.points)}`);
+    }
+    await page.close();
+    return result;
+  } finally {
+    session.stop();
+  }
+}
+
 async function smokeRotatedTextEdit(browser: Awaited<ReturnType<typeof chromium.launch>>) {
   const spec: SceneSpec = {
     canvas: { width: 420, height: 260 },
@@ -659,6 +840,22 @@ async function smokeCliRenderInspect() {
     throw new Error("inspect did not return embedded scene");
   }
 
+  // Arrow connector: an end binding must survive render → embed → inspect round-trip.
+  const bindingSpec: SceneSpec = {
+    canvas: { width: 300, height: 200 },
+    shapes: [
+      { id: "box", type: "rect", x: 120, y: 70, width: 90, height: 70, color: "blue" },
+      { id: "wire", type: "arrow", from: [40, 180], to: [165, 105], color: "red", endBinding: { shapeId: "box", ratio: [0.5, 0.5] } }
+    ]
+  };
+  const bindingPath = join(dir, "binding.png");
+  runCli(["render", "--spec", "-", "--out", bindingPath, "--json"], JSON.stringify(bindingSpec));
+  const bindingMeta = normalizeScene(JSON.parse(runCli(["inspect", bindingPath, "--json"])));
+  const boundArrow = bindingMeta.shapes.find((shape) => shape.id === "wire");
+  if (!boundArrow || boundArrow.type !== "arrow" || boundArrow.endBinding?.shapeId !== "box") {
+    throw new Error(`arrow binding did not round-trip through PNG metadata: ${JSON.stringify(boundArrow)}`);
+  }
+
   const dot = "digraph { A -> B; B -> C }";
   const dotPath = join(dir, "dot.png");
   const dotResult = JSON.parse(runCli(["render", "--dot", "-", "--out", dotPath, "--json"], dot)) as QuickPaintResult;
@@ -685,8 +882,53 @@ async function smokeCliRenderInspect() {
   await expectCliRejects(["open", "--spec", malformedSpecPath, "--json"], "shape 0 must include a type");
 }
 
+async function smokeAsciiRender() {
+  const dir = mkdtempSync(join(tmpdir(), "quick-paint-ascii-"));
+  const ascii = (spec: SceneSpec) => runCli(["render", "--spec", "-", "--ascii"], JSON.stringify(spec));
+  const hasGlyphs = (text: string, glyphs: string[], label: string) => {
+    for (const glyph of glyphs) if (!text.includes(glyph)) throw new Error(`${label} missing ${glyph}:\n${text}`);
+  };
+  const box = (extra: Partial<SceneRectSpec>): SceneSpec => ({
+    canvas: { width: 176, height: 110 },
+    shapes: [{ type: "rect", x: 16, y: 16, width: 128, height: 64, color: "blue", ...extra }]
+  });
+
+  hasGlyphs(ascii(box({})), ["┌", "┐", "└", "┘", "─", "│"], "single box");
+  hasGlyphs(ascii(box({ strokeStyle: "bold" })), ["┏", "┓", "┗", "┛", "━", "┃"], "bold box");
+  hasGlyphs(ascii(box({ strokeStyle: "double" })), ["╔", "╗", "╚", "╝", "═", "║"], "double box");
+  hasGlyphs(ascii(box({ rounded: true })), ["╭", "╮", "╰", "╯"], "rounded box");
+
+  const crossing = ascii({
+    canvas: { width: 240, height: 200 },
+    shapes: [
+      { type: "arrow", from: [24, 96], to: [216, 96], color: "dark" },
+      { type: "arrow", from: [120, 24], to: [120, 176], color: "red" }
+    ]
+  });
+  hasGlyphs(crossing, ["┼", "▶", "▼"], "crossing arrows");
+
+  const dashed = ascii(box({ dashed: true }));
+  if (!dashed.includes("─ ─")) throw new Error(`dashed rect did not gap its border:\n${dashed}`);
+
+  // ASCII PNG round-trips the scene (incl. the new strokeStyle field) through metadata.
+  const spec: SceneSpec = { canvas: { width: 200, height: 120 }, shapes: [{ type: "rect", x: 20, y: 20, width: 120, height: 60, color: "blue", label: "hi", strokeStyle: "double" }] };
+  const pngPath = join(dir, "ascii.png");
+  const pngResult = JSON.parse(runCli(["render", "--spec", "-", "--ascii", "--out", pngPath, "--json"], JSON.stringify(spec))) as QuickPaintResult;
+  verifyResult(pngResult);
+  const meta = normalizeScene(JSON.parse(runCli(["inspect", pngPath, "--json"])));
+  const rect = meta.shapes.find((shape) => shape.type === "rect");
+  if (!rect || rect.type !== "rect" || rect.strokeStyle !== "double") {
+    throw new Error(`ascii PNG metadata lost strokeStyle: ${JSON.stringify(rect)}`);
+  }
+
+  const dotPath = join(dir, "graph.dot");
+  writeFileSync(dotPath, "digraph { A -> B }");
+  await expectCliRejects(["render", "--dot", dotPath, "--ascii", "--out", join(dir, "x.png")], "--ascii requires --spec");
+}
+
 async function main() {
   await smokeCliRenderInspect();
+  await smokeAsciiRender();
 
   const browser = await chromium.launch({ channel: "chrome", headless: true });
   try {
@@ -702,6 +944,11 @@ async function main() {
     const preciseLineHitResult = await smokePreciseLineHit(browser);
     const zOrderResult = await smokeZOrder(browser);
     const arrowEndpointResult = await smokeArrowEndpointEditor(browser);
+    const arrowBindingResult = await smokeArrowBinding(browser);
+    const gridDrawResult = await smokeGridDraw(browser);
+    const gridEditResult = await smokeGridEdit(browser);
+    const gridTextResult = await smokeGridText(browser);
+    await smokeGridCopyAscii(browser);
     const rotatedTextResult = await smokeRotatedTextEdit(browser);
     const rotatedParityResult = await smokeRotatedTextParity(browser);
     const wrappedTextResult = await smokeWrappedText(browser);
@@ -730,7 +977,7 @@ async function main() {
     const reopenedResult = await drawAndSaveViaCli(browser, ["open", "--spec", inspectedPath, cliEditResult.path], { expectedSourceKind: "image" });
     verifySceneMetadata(reopenedResult.path, cliOpenSpec, 0, { width: cliEditResult.width, height: cliEditResult.height });
 
-    console.log(JSON.stringify({ blank: blankResult, clipboardPath: clipPath, edit: editResult, text: textResult, activeText: activeTextResult, selection: selectionResult, multiSelect: multiSelectResult, preciseLineHit: preciseLineHitResult, zOrder: zOrderResult, arrowEndpoint: arrowEndpointResult, rotatedText: rotatedTextResult, rotatedParity: rotatedParityResult, wrappedText: wrappedTextResult, imageDeselect: imageDeselectResult, scene: sceneResult, cliOpen: cliOpenResult, cliEdit: cliEditResult, reopened: reopenedResult }, null, 2));
+    console.log(JSON.stringify({ blank: blankResult, clipboardPath: clipPath, edit: editResult, text: textResult, activeText: activeTextResult, selection: selectionResult, multiSelect: multiSelectResult, preciseLineHit: preciseLineHitResult, zOrder: zOrderResult, arrowEndpoint: arrowEndpointResult, arrowBinding: arrowBindingResult, gridDraw: gridDrawResult, gridEdit: gridEditResult, gridText: gridTextResult, rotatedText: rotatedTextResult, rotatedParity: rotatedParityResult, wrappedText: wrappedTextResult, imageDeselect: imageDeselectResult, scene: sceneResult, cliOpen: cliOpenResult, cliEdit: cliEditResult, reopened: reopenedResult }, null, 2));
   } finally {
     await browser.close();
   }

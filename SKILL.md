@@ -22,6 +22,8 @@ Use when a quick drawing, screenshot markup, clipboard-image recovery, or `@/tmp
 ```bash
 quick-paint render --spec scene.json --out /tmp/diagram.png
 echo '{"shapes":[...]}' | quick-paint render --spec - --out /tmp/diagram.png --json
+echo '{"shapes":[...]}' | quick-paint render --spec - --ascii            # box-drawing text to stdout
+quick-paint render --spec scene.json --ascii --out /tmp/diagram.txt      # or a monospace .png
 echo 'graph LR; A-->B' | quick-paint render --mermaid - --out /tmp/flow.png --json
 echo 'digraph { A -> B }' | quick-paint render --dot - --out /tmp/graph.png --json
 quick-paint inspect /tmp/diagram.png --json
@@ -37,6 +39,7 @@ quick-paint shot --paste
 
 Modes:
 - `render`: headless AI-first path. Reads a scene spec and writes a PNG without browser interaction.
+- `render --ascii`: render the scene as a MonoSketch-style box-drawing diagram. Prints text to stdout (or `--out file.txt`), or a monospace `--out file.png`. Requires `--spec`.
 - `render --mermaid` / `render --dot`: adapter path for simple graph source. Uses installed renderers first and `bunx` fallbacks when needed.
 - `inspect`: extracts the embedded quick-paint scene from a PNG for round-trip edits or diffing.
 - `open`: opens a browser canvas preloaded with an optional scene spec and optional image.
@@ -50,6 +53,7 @@ Modes:
 ## Decision Tree
 
 - Use `render` for diagrams, callouts, labels, redactions, arrows, and other images an agent can specify deterministically.
+- Use `render --ascii` when you want a copy-pasteable text diagram (box-drawing characters) instead of, or alongside, a PNG — e.g. to drop into a comment, README, or chat.
 - Use `render --mermaid` or `render --dot` when the source already exists as graph text.
 - Use `open --spec` when a generated scene needs hand adjustment before saving.
 - Use `shot` for screenshot markup.
@@ -74,11 +78,13 @@ Modes:
 Supported shape types:
 - `rect`: `x`, `y`, `width`, `height`, optional `fill`, optional `label`.
 - `redact`: same as `rect`, rendered as a solid dark block.
-- `arrow`: `from: [x, y]` and `to: [x, y]`, or `points: [x1, y1, x2, y2]`, optional `label`.
+- `arrow`: `from: [x, y]` and `to: [x, y]`, or `points: [x1, y1, x2, y2]`, optional `label`. Optional `startBinding`/`endBinding` (`{ "shapeId", "ratio": [0..1, 0..1] }`) glue an endpoint to a shape so it re-routes when that shape moves.
 - `text`: `x`, `y`, `text`, optional `width`, `lineHeight`, `fontSize`, `fontFamily`, `textAlign`. Add `width` when text should wrap predictably.
 - `pen`, `highlight`, `highlighter`: `points: [x1, y1, x2, y2, ...]`.
 
 Named colors: `red`, `orange`, `yellow`, `green`, `blue`, `dark`, `black`, `white`.
+
+ASCII styling (only affects `--ascii` output; ignored by the pixel/PNG paths): `rect` and `arrow` accept `strokeStyle: "single" | "bold" | "double"` and `dashed: true`; `rect` also accepts `rounded: true`. Line overlaps resolve to box-drawing junctions (`├ ┼ ┤ ┬ ┴`).
 
 ## Workflow
 

@@ -13,11 +13,14 @@ export function pasteTextIntoFocusedApp(text: string) {
   if (process.platform !== "darwin") {
     throw new Error("--paste is only implemented on macOS");
   }
-  const escaped = text.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  // Set the clipboard via pbcopy (handles arbitrary bytes incl. newlines/quotes),
+  // then keystroke Cmd+V. AppleScript string literals can't carry raw newlines.
+  const copy = Bun.spawnSync(["pbcopy"], { stdin: Buffer.from(text), stdout: "pipe", stderr: "pipe" });
+  if (!copy.success) {
+    throw new Error(copy.stderr.toString().trim() || "clipboard copy failed");
+  }
   const proc = Bun.spawnSync([
     "osascript",
-    "-e",
-    `set the clipboard to "${escaped}"`,
     "-e",
     "tell application \"System Events\" to keystroke \"v\" using command down"
   ], { stdout: "pipe", stderr: "pipe" });
