@@ -442,7 +442,7 @@ async function smokeGridDraw(browser: Awaited<ReturnType<typeof chromium.launch>
     // Appearance panel: pick double border + dense fill, applied to the next shape.
     await page.getByRole("button", { name: "Double", exact: true }).click();
     await page.getByRole("button", { name: "Dense", exact: true }).click();
-    await page.getByRole("button", { name: "Rectangle (3)" }).click();
+    await page.getByRole("button", { name: "Rectangle (4)" }).click();
     const canvas = page.locator(".gridCanvas");
     const box = await canvas.boundingBox();
     if (!box) throw new Error("missing grid canvas");
@@ -509,7 +509,7 @@ async function smokeGridText(browser: Awaited<ReturnType<typeof chromium.launch>
     const page = await browser.newPage({ viewport: { width: 1200, height: 800 } });
     await page.goto(session.url);
     await page.getByRole("button", { name: "Grid mode (ASCII)" }).click();
-    await page.getByRole("button", { name: "Text (4)" }).click();
+    await page.getByRole("button", { name: "Text (5)" }).click();
     const box = await page.locator(".gridCanvas").boundingBox();
     if (!box) throw new Error("missing grid canvas");
     // Escape must cancel without committing.
@@ -923,6 +923,11 @@ async function smokeAsciiRender() {
     ]
   });
   hasGlyphs(crossing, ["┼", "▶", "▼"], "crossing arrows");
+
+  // A line is an arrow with the head suppressed: same stroke, no arrowhead glyph.
+  const line = ascii({ canvas: { width: 200, height: 60 }, shapes: [{ type: "arrow", arrowhead: false, from: [16, 24], to: [176, 24], color: "dark" }] });
+  hasGlyphs(line, ["─"], "line stroke");
+  for (const head of ["▶", "◀", "▲", "▼"]) if (line.includes(head)) throw new Error(`line should not draw an arrowhead (${head}):\n${line}`);
 
   const dashed = ascii(box({ dashed: true }));
   if (!dashed.includes("─ ─")) throw new Error(`dashed rect did not gap its border:\n${dashed}`);

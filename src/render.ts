@@ -117,7 +117,8 @@ function shapeToSvg(shape: Shape): string {
     const label = shape.label
       ? `<text x="${(x1 + x2) / 2}" y="${(y1 + y2) / 2 - 10}" fill="${shape.color}" font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="16" font-weight="650" text-anchor="middle">${escapeText(shape.label)}</text>`
       : "";
-    return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${shape.color}" stroke-width="${shape.strokeWidth}" stroke-linecap="round" marker-end="url(#arrowhead)"/>${label}`;
+    const marker = shape.arrowhead === false ? "" : ` marker-end="url(#arrowhead)"`;
+    return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${shape.color}" stroke-width="${shape.strokeWidth}" stroke-linecap="round"${marker}/>${label}`;
   }
   if (shape.type === "pen") {
     const points = shape.points.reduce<string[]>((parts, value, index) => {

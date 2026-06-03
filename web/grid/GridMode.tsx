@@ -134,10 +134,11 @@ export function GridMode(props: GridModeProps) {
         ...(style.dashed ? { dashed: true } : {})
       };
     }
-    if (tool === "arrow") {
+    if (tool === "arrow" || tool === "line") {
       if (start.col === end.col && start.row === end.row) return null;
       return {
         id: shapeId(), type: "arrow", points: [start.col * ASCII_W, start.row * ASCII_H, end.col * ASCII_W, end.row * ASCII_H], color, strokeWidth,
+        ...(tool === "line" ? { arrowhead: false } : {}),
         ...(style.border === "bold" || style.border === "double" ? { strokeStyle: style.border } : {}),
         ...(style.dashed ? { dashed: true } : {})
       };
@@ -162,7 +163,7 @@ export function GridMode(props: GridModeProps) {
       if (hit) event.currentTarget.setPointerCapture(event.pointerId);
       return;
     }
-    if (tool !== "rect" && tool !== "redact" && tool !== "arrow") return;
+    if (tool !== "rect" && tool !== "redact" && tool !== "arrow" && tool !== "line") return;
     event.currentTarget.setPointerCapture(event.pointerId);
     startRef.current = cell;
   }, [cellAt, hitTest, onSelect, tool]);

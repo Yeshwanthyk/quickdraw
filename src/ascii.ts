@@ -192,7 +192,7 @@ function paintArrow(grid: Grid, arrow: Extract<Shape, { type: "arrow" }>, toCol:
     addLine(grid, path[j].col, path[j].row, dir, weight, false);
   }
 
-  const head = path.length > 1 ? ARROW_HEADS[dirToward(path[path.length - 2], path[path.length - 1])] : undefined;
+  const head = arrow.arrowhead !== false && path.length > 1 ? ARROW_HEADS[dirToward(path[path.length - 2], path[path.length - 1])] : undefined;
   if (head) setChar(grid, path[path.length - 1].col, path[path.length - 1].row, head);
   if (arrow.label) {
     const mid = path[Math.floor(path.length / 2)];

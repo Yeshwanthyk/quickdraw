@@ -1,4 +1,4 @@
-import { AlignCenter, AlignLeft, AlignRight, ArrowRight, BringToFront, Check, Highlighter, MousePointer2, PenLine, Redo2, ScanLine, SendToBack, Square, Trash2, Type, Undo2, X } from "lucide-react";
+import { AlignCenter, AlignLeft, AlignRight, ArrowRight, BringToFront, Check, Highlighter, Minus, MousePointer2, PenLine, Redo2, ScanLine, SendToBack, Square, Trash2, Type, Undo2, X } from "lucide-react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Arrow, Group, Image as KonvaImage, Layer, Line, Rect, Stage, Text as KonvaText } from "react-konva";
 import type Konva from "konva";
@@ -22,8 +22,8 @@ const fontFamilies = [
 ];
 // Tool order per mode drives both the number shortcuts and the "(n)" labels,
 // so the keys always match the buttons that are actually visible.
-const paintToolOrder: Tool[] = ["select", "pen", "highlighter", "arrow", "rect", "text", "redact"];
-const gridToolOrder: Tool[] = ["select", "arrow", "rect", "text", "redact"];
+const paintToolOrder: Tool[] = ["select", "pen", "highlighter", "arrow", "line", "rect", "text", "redact"];
+const gridToolOrder: Tool[] = ["select", "arrow", "line", "rect", "text", "redact"];
 const toolOrderFor = (mode: "grid" | "paint"): Tool[] => (mode === "grid" ? gridToolOrder : paintToolOrder);
 const handleSize = 10;
 const rotateHandleOffset = 34;
@@ -275,6 +275,8 @@ export default function App() {
       });
     } else if (tool === "arrow") {
       setDraft({ id: shapeId(), type: "arrow", points: [point.x, point.y, point.x, point.y], color, strokeWidth });
+    } else if (tool === "line") {
+      setDraft({ id: shapeId(), type: "arrow", arrowhead: false, points: [point.x, point.y, point.x, point.y], color, strokeWidth });
     } else {
       setDraft({
         id: shapeId(),
@@ -711,6 +713,7 @@ export default function App() {
         {mode === "paint" && <ToolButton active={tool === "pen"} title={`Pen (${toolNumber("pen")})`} onClick={() => setTool("pen")}><PenLine size={17} /></ToolButton>}
         {mode === "paint" && <ToolButton active={tool === "highlighter"} title={`Highlighter (${toolNumber("highlighter")})`} onClick={() => setTool("highlighter")}><Highlighter size={17} /></ToolButton>}
         <ToolButton active={tool === "arrow"} title={`Arrow (${toolNumber("arrow")})`} onClick={() => setTool("arrow")}><ArrowRight size={17} /></ToolButton>
+        <ToolButton active={tool === "line"} title={`Line (${toolNumber("line")})`} onClick={() => setTool("line")}><Minus size={17} /></ToolButton>
         <ToolButton active={tool === "rect"} title={`Rectangle (${toolNumber("rect")})`} onClick={() => setTool("rect")}><Square size={17} /></ToolButton>
         <ToolButton active={tool === "text"} title={`Text (${toolNumber("text")})`} onClick={() => setTool("text")}><Type size={17} /></ToolButton>
         <ToolButton active={tool === "redact"} title={`Redact (${toolNumber("redact")})`} onClick={() => setTool("redact")}><ScanLine size={17} /></ToolButton>
@@ -963,8 +966,9 @@ const ShapeNode = memo(function ShapeNode(props: { shape: Shape }) {
     return <Line points={shape.points} stroke={shape.color} strokeWidth={shape.opacity ? Math.max(shape.strokeWidth, 18) : shape.strokeWidth} opacity={shape.opacity ?? 1} tension={0.45} lineCap="round" lineJoin="round" perfectDrawEnabled={false} />;
   }
   if (shape.type === "arrow") {
+    const head = shape.arrowhead !== false;
     return <>
-      <Arrow points={shape.points} stroke={shape.color} fill={shape.color} strokeWidth={shape.strokeWidth} pointerLength={16} pointerWidth={14} lineCap="round" perfectDrawEnabled={false} />
+      <Arrow points={shape.points} stroke={shape.color} fill={shape.color} strokeWidth={shape.strokeWidth} pointerLength={head ? 16 : 0} pointerWidth={head ? 14 : 0} lineCap="round" perfectDrawEnabled={false} />
       {shape.label && <KonvaText x={(shape.points[0] + shape.points[2]) / 2} y={(shape.points[1] + shape.points[3]) / 2 - 22} text={shape.label} fill={shape.color} fontSize={16} fontStyle="600" align="center" />}
     </>;
   }

@@ -2,7 +2,7 @@ import { layoutText } from "./text-layout";
 
 export type DrawColor = "#e11d48" | "#f59e0b" | "#10b981" | "#2563eb" | "#111827" | "#ffffff";
 
-export type Tool = "select" | "pen" | "highlighter" | "arrow" | "rect" | "text" | "redact";
+export type Tool = "select" | "pen" | "highlighter" | "arrow" | "line" | "rect" | "text" | "redact";
 
 export type PointTuple = [number, number];
 
@@ -38,6 +38,8 @@ export type ArrowShape = BaseShape & {
   endBinding?: Binding;
   strokeStyle?: StrokeStyle;
   dashed?: boolean;
+  // A plain line is an arrow with the head suppressed; absent/true keeps the arrowhead.
+  arrowhead?: boolean;
 };
 
 export type RectShape = BaseShape & {
@@ -112,6 +114,7 @@ export type SceneArrowSpec = CommonSpec & {
   endBinding?: Binding;
   strokeStyle?: StrokeStyle;
   dashed?: boolean;
+  arrowhead?: boolean;
 };
 
 export type SceneTextSpec = CommonSpec & {
@@ -250,6 +253,7 @@ function normalizeShape(shape: SceneShapeSpec, index: number): Shape[] {
     const arrowStroke = strokeStyleValue(shape.strokeStyle);
     if (arrowStroke) arrow.strokeStyle = arrowStroke;
     if (shape.dashed === true) arrow.dashed = true;
+    if (shape.arrowhead === false) arrow.arrowhead = false;
     return [arrow];
   }
 
