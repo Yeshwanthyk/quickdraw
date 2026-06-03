@@ -17,6 +17,7 @@ tar -czf "$payload" \
   bun.lock \
   index.html \
   tsconfig.json \
+  public \
   src \
   web \
   node_modules

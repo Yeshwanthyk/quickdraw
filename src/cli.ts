@@ -3,9 +3,10 @@ import { chmodSync, existsSync, readFileSync, renameSync, writeFileSync } from "
 import { dirname, join, resolve } from "node:path";
 import { renderAdapterToPng, type RenderAdapter } from "./adapter-render";
 import { readClipboardImage } from "./clipboard";
+import { contextFormats, formatQuickdrawContext, type ContextFormat, type QuickdrawResult } from "./context";
 import { extractSceneMetadata } from "./png-metadata";
 import { renderAsciiToPng, renderSceneToAscii, renderSceneToPng } from "./render";
-import { startQuickdrawServer, type CliMode, type QuickdrawResult } from "./server";
+import { startQuickdrawServer, type CliMode } from "./server";
 import { focusedAppBundleId, pasteTextIntoApp } from "./sinks";
 import { captureScreenshot } from "./screenshot";
 import { isSceneSpec, normalizeScene, type SceneSpec } from "./spec";
@@ -14,6 +15,7 @@ type BrowserOptions = {
   kind: "browser";
   mode: CliMode;
   json: boolean;
+  context?: ContextFormat;
   paste: boolean;
 };
 
@@ -23,6 +25,7 @@ type RenderOptions = {
   outPath: string;
   ascii: boolean;
   json: boolean;
+  context?: ContextFormat;
   paste: boolean;
 };
 
@@ -53,7 +56,10 @@ const usage = [
   "  quickdraw render --dot graph.dot|- --out file.png [--json] [--paste]",
   "  quickdraw inspect <image.png> [--json]",
   "  quickdraw upgrade",
-  "  quickdraw version"
+  "  quickdraw version",
+  "",
+  "output:",
+  "  --context token|markdown|json|codex  print/paste an agent handoff context"
 ].join("\n");
 
 function currentVersion(): string {
@@ -118,9 +124,10 @@ function parseArgs(argv: string[]): CliOptions {
     return { kind: "upgrade" };
   }
   const json = takeFlag(args, "--json");
+  const context = takeContext(args);
   const paste = takeFlag(args, "--paste");
 
-  if (args.length === 0) return { kind: "browser", mode: { kind: "blank" }, json, paste };
+  if (args.length === 0) return { kind: "browser", mode: { kind: "blank" }, json, context, paste };
 
   const command = args.shift();
   if (command === "render") {
@@ -129,10 +136,11 @@ function parseArgs(argv: string[]): CliOptions {
     if (ascii && source.kind !== "spec") throw new Error("--ascii requires --spec");
     const outPath = takeOption(args, "--out", !ascii);
     rejectExtra(args);
-    return { kind: "render", source, outPath: outPath ? resolve(outPath) : "", ascii, json, paste };
+    return { kind: "render", source, outPath: outPath ? resolve(outPath) : "", ascii, json, context, paste };
   }
 
   if (command === "inspect") {
+    if (context) throw new Error("--context is not supported for inspect");
     const file = args.shift();
     if (!file) throw new Error(usage);
     rejectExtra(args);
@@ -143,10 +151,10 @@ function parseArgs(argv: string[]): CliOptions {
     const spec = readOptionalSpec(args);
     const file = args.shift();
     rejectExtra(args);
-    if (!file) return { kind: "browser", mode: { kind: "blank", scene: spec }, json, paste };
+    if (!file) return { kind: "browser", mode: { kind: "blank", scene: spec }, json, context, paste };
     const path = resolve(file);
     if (!existsSync(path)) throw new Error(`file not found: ${file}`);
-    return { kind: "browser", mode: imageMode(path, spec), json, paste };
+    return { kind: "browser", mode: imageMode(path, spec), json, context, paste };
   }
 
   if (command === "edit") {
@@ -156,7 +164,7 @@ function parseArgs(argv: string[]): CliOptions {
     rejectExtra(args);
     const path = resolve(file);
     if (!existsSync(path)) throw new Error(`file not found: ${file}`);
-    return { kind: "browser", mode: imageMode(path, spec), json, paste };
+    return { kind: "browser", mode: imageMode(path, spec), json, context, paste };
   }
 
   if (command === "paste") {
@@ -164,13 +172,13 @@ function parseArgs(argv: string[]): CliOptions {
     rejectExtra(args);
     const path = readClipboardImage();
     if (!path) throw new Error("clipboard does not contain a PNG image");
-    return { kind: "browser", mode: { kind: "edit", path, scene: spec }, json, paste };
+    return { kind: "browser", mode: { kind: "edit", path, scene: spec }, json, context, paste };
   }
 
   if (command === "shot") {
     const spec = readOptionalSpec(args);
     rejectExtra(args);
-    return { kind: "browser", mode: { kind: "edit", path: captureScreenshot(), scene: spec }, json, paste };
+    return { kind: "browser", mode: { kind: "edit", path: captureScreenshot(), scene: spec }, json, context, paste };
   }
 
   throw new Error(usage);
@@ -193,6 +201,13 @@ function takeOption(args: string[], name: string, required = false): string {
   if (!value || value.startsWith("--")) throw new Error(`${name} requires a value`);
   args.splice(index, 2);
   return value;
+}
+
+function takeContext(args: string[]): ContextFormat | undefined {
+  const value = takeOption(args, "--context");
+  if (!value) return undefined;
+  if (contextFormats.includes(value as ContextFormat)) return value as ContextFormat;
+  throw new Error(`--context must be one of ${contextFormats.join(", ")}`);
 }
 
 function readOptionalSpec(args: string[]): SceneSpec | undefined {
@@ -234,12 +249,20 @@ function imageMode(path: string, scene: SceneSpec | undefined): CliMode {
   return { kind: "edit", path, scene };
 }
 
-function printResult(result: QuickdrawResult, json: boolean) {
+function formatResult(result: QuickdrawResult, json: boolean, context: ContextFormat | undefined) {
+  if (context) return formatQuickdrawContext(result, context);
   if (json) {
-    console.log(JSON.stringify(result, null, 2));
-    return;
+    return JSON.stringify(result, null, 2);
   }
-  console.log(`@${result.path}`);
+  return result.token;
+}
+
+function printResult(result: QuickdrawResult, json: boolean, context: ContextFormat | undefined) {
+  console.log(formatResult(result, json, context));
+}
+
+function formatPasteResult(result: QuickdrawResult, context: ContextFormat | undefined) {
+  return context ? formatQuickdrawContext(result, context) : result.token;
 }
 
 function printInspect(scene: unknown, json: boolean) {
@@ -267,10 +290,14 @@ async function main() {
   const pasteTarget = options.paste ? focusedAppBundleId() : null;
   if (options.kind === "render") {
     if (options.ascii && options.source.kind === "spec") {
+      if (options.context && !options.outPath.toLowerCase().endsWith(".png")) {
+        throw new Error("--context requires an image artifact; use --out file.png with --ascii");
+      }
       if (options.outPath.toLowerCase().endsWith(".png")) {
         const result = renderAsciiToPng(options.source.value, { outPath: options.outPath, clipboard: true });
-        printResult(result, options.json);
-        if (options.paste) pasteTextIntoApp(`@${result.path}`, pasteTarget);
+        const output = formatResult(result, options.json, options.context);
+        console.log(output);
+        if (options.paste) pasteTextIntoApp(formatPasteResult(result, options.context), pasteTarget);
         return;
       }
       const ascii = renderSceneToAscii(options.source.value);
@@ -284,8 +311,9 @@ async function main() {
     const result = options.source.kind === "spec"
       ? renderSceneToPng(options.source.value, { outPath: options.outPath, clipboard: true })
       : renderAdapterToPng(options.source.kind, options.source.value, { outPath: options.outPath, clipboard: true });
-    printResult(result, options.json);
-    if (options.paste) pasteTextIntoApp(`@${result.path}`, pasteTarget);
+    const output = formatResult(result, options.json, options.context);
+    console.log(output);
+    if (options.paste) pasteTextIntoApp(formatPasteResult(result, options.context), pasteTarget);
     return;
   }
 
@@ -293,8 +321,9 @@ async function main() {
   if (process.env.QUICKDRAW_URL_FILE) writeFileSync(process.env.QUICKDRAW_URL_FILE, session.url);
   try {
     const result = await session.result;
-    printResult(result, options.json);
-    if (options.paste) pasteTextIntoApp(`@${result.path}`, pasteTarget);
+    const output = formatResult(result, options.json, options.context);
+    console.log(output);
+    if (options.paste) pasteTextIntoApp(formatPasteResult(result, options.context), pasteTarget);
   } finally {
     session.stop();
   }

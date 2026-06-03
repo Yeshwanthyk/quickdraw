@@ -6,7 +6,7 @@ import { sceneToAscii } from "./ascii";
 import { normalizeScene, resolveArrowPoints, type NormalizedScene, type Shape } from "./spec";
 import { copyImageToClipboard } from "./clipboard";
 import { layoutText } from "./text-layout";
-import type { QuickdrawResult } from "./server";
+import { completeQuickdrawResult, type QuickdrawResult } from "./context";
 
 export type RenderOptions = {
   outPath: string;
@@ -34,13 +34,13 @@ export function renderSceneToPng(input: unknown, options: RenderOptions): Quickd
       clipboard = false;
     }
   }
-  return {
+  return completeQuickdrawResult({
     path: options.outPath,
     mime: "image/png",
     width: scene.canvas.width,
     height: scene.canvas.height,
     clipboard
-  };
+  });
 }
 
 export function renderSceneToAscii(input: unknown): string {
@@ -69,7 +69,7 @@ export function renderAsciiToPng(input: unknown, options: RenderOptions): Quickd
       clipboard = false;
     }
   }
-  return { path: options.outPath, mime: "image/png", width: scene.canvas.width, height: scene.canvas.height, clipboard };
+  return completeQuickdrawResult({ path: options.outPath, mime: "image/png", width: scene.canvas.width, height: scene.canvas.height, clipboard });
 }
 
 export function renderSvgToPng(svgPath: string, outPath: string) {

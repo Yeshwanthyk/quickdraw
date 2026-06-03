@@ -3,8 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium, type Locator, type Page } from "@playwright/test";
 import { readClipboardImage } from "../src/clipboard";
+import type { QuickdrawContext, QuickdrawResult } from "../src/context";
 import { extractSceneMetadata } from "../src/png-metadata";
-import { startQuickdrawServer, type QuickdrawResult } from "../src/server";
+import { startQuickdrawServer } from "../src/server";
 import { normalizeScene, type SceneRectSpec, type SceneSpec } from "../src/spec";
 import { layoutText } from "../src/text-layout";
 
@@ -19,6 +20,10 @@ function verifyResult(result: QuickdrawResult) {
   if (statSync(result.path).size < 100) throw new Error(`empty output: ${result.path}`);
   if (result.mime !== "image/png") throw new Error(`unexpected mime: ${result.mime}`);
   if (result.width <= 0 || result.height <= 0) throw new Error(`bad dimensions: ${result.width}x${result.height}`);
+  if (!/^[a-f0-9]{64}$/.test(result.sha256)) throw new Error(`bad sha256: ${result.sha256}`);
+  if (result.token !== `@${result.path}`) throw new Error(`bad token: ${result.token}`);
+  if (result.markdown !== `![quickdraw output](${result.path})`) throw new Error(`bad markdown: ${result.markdown}`);
+  if (!result.inspect.includes(result.path)) throw new Error(`bad inspect command: ${result.inspect}`);
 }
 
 type ImageBounds = {
@@ -628,7 +633,7 @@ async function smokeRotatedTextEdit(browser: Awaited<ReturnType<typeof chromium.
     await page.goto(session.url);
     await page.getByRole("button", { name: "Paint mode" }).click();
     const stage = page.locator(".stage canvas").first();
-    await dblclickStage(page, stage, 190, 140);
+    await dblclickStage(page, stage, 170, 150);
     await page.getByRole("textbox", { name: "Text" }).fill("Edited rotation");
     await page.keyboard.press("Enter");
     await page.getByRole("button", { name: "Save" }).click();
@@ -850,6 +855,21 @@ async function smokeCliRenderInspect() {
   verifyResult(result);
   if (result.path !== outPath) throw new Error(`render wrote unexpected path: ${result.path}`);
   verifySceneMetadata(outPath, spec);
+
+  const markdown = runCli(["render", "--spec", "-", "--out", join(dir, "markdown.png"), "--context", "markdown"], JSON.stringify(spec));
+  if (!markdown.startsWith("![quickdraw output](") || !markdown.endsWith("markdown.png)")) {
+    throw new Error(`markdown context output mismatch: ${markdown}`);
+  }
+
+  const token = runCli(["render", "--spec", "-", "--out", join(dir, "token.png"), "--context", "token"], JSON.stringify(spec));
+  if (!token.startsWith("@") || !token.endsWith("token.png")) {
+    throw new Error(`token context output mismatch: ${token}`);
+  }
+
+  const context = JSON.parse(runCli(["render", "--spec", "-", "--out", join(dir, "context.png"), "--context", "json"], JSON.stringify(spec))) as QuickdrawContext;
+  if (context.kind !== "quickdraw.context.v1" || context.artifact.mime !== "image/png" || !context.scene || !context.markdown.includes(context.artifact.path)) {
+    throw new Error(`context envelope mismatch: ${JSON.stringify(context)}`);
+  }
 
   const inspected = JSON.parse(runCli(["inspect", outPath, "--json"]));
   const inspectedScene = normalizeScene(inspected);

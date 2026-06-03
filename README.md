@@ -1,5 +1,7 @@
 # quickdraw
 
+![quickdraw logo](assets/brand/quickdraw-logo.svg)
+
 A tiny AI-first PNG tool: render simple scene specs headlessly, or open a fast browser canvas for screenshot/image annotation.
 
 ## Install
@@ -91,10 +93,20 @@ quickdraw edit image.png          # annotate an image
 quickdraw paste                   # annotate clipboard PNG
 quickdraw shot                    # take a macOS screenshot, then annotate
 quickdraw --json                  # machine-readable result
-quickdraw shot --paste            # paste @/tmp/...png token back to focused app
+quickdraw shot --context markdown # print a Markdown image reference
+quickdraw shot --context json     # print the full context envelope
+quickdraw shot --context codex --paste # paste Markdown back to focused app
 ```
 
 Browser output is a PNG under `/tmp/quickdraw-xxxxxxxx.png`. Rendered output goes to `--out`. The image is also copied to the macOS clipboard when possible.
+
+`--context` controls the handoff string agents inject after Save:
+- `token`: `@/tmp/quickdraw-xxxxxxxx.png` (default)
+- `markdown`: `![quickdraw output](/tmp/quickdraw-xxxxxxxx.png)`
+- `codex`: same Markdown image reference, tuned for Codex chat rendering
+- `json`: `{ kind: "quickdraw.context.v1", artifact, scene, token, markdown, inspect }`
+
+`--json` keeps the legacy result shape and adds `sha256`, `token`, `markdown`, and `inspect`. Use `--context json` when the caller wants the full recoverable context envelope.
 
 Minimal scene spec:
 

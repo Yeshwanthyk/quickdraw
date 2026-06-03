@@ -34,6 +34,9 @@ quickdraw edit /path/to/image.png
 quickdraw paste
 quickdraw shot
 quickdraw --json
+quickdraw shot --context markdown
+quickdraw shot --context json
+quickdraw shot --context codex --paste
 quickdraw shot --paste
 ```
 
@@ -47,8 +50,9 @@ Modes:
 - `edit`: annotate an existing image file.
 - `paste`: recover/edit the current clipboard PNG.
 - `shot`: select a macOS screenshot region/window, then annotate it.
-- `--json`: print `{ path, mime, width, height, clipboard }`.
-- `--paste`: after Save, paste the `@/tmp/...png` token back into the app that was focused before launch.
+- `--json`: print the legacy result `{ path, mime, width, height, clipboard, sha256, token, markdown, inspect }`.
+- `--context token|markdown|json|codex`: print the handoff string an agent should inject after Save. `token` is default; `markdown`/`codex` print `![quickdraw output](/tmp/...)`; `json` prints the full recoverable context envelope.
+- `--paste`: after Save, paste the selected context output back into the app that was focused before launch.
 
 ## Decision Tree
 
@@ -88,10 +92,13 @@ ASCII styling (only affects `--ascii` output; ignored by the pixel/PNG paths): `
 
 ## Workflow
 
-1. For agent-authored images, write a small scene JSON and run `quickdraw render --spec scene.json --out /tmp/name.png --json`.
+1. For agent-authored images, write a small scene JSON and run `quickdraw render --spec scene.json --out /tmp/name.png --context json`.
 2. For hand editing, run the smallest browser command for the source: `quickdraw open --spec <scene>`, `quickdraw edit <file>`, `quickdraw paste`, or `quickdraw shot`.
 3. If the browser opens, tell the user the command is waiting for Save.
-4. Use the printed `@/tmp/...png` as the durable artifact.
+4. Use the printed context to inject the durable artifact:
+   - Codex/chat display: use `--context codex` or render the returned `markdown`.
+   - Tool/native attachment flow: use `token`.
+   - Programmatic recovery: use `--context json` and preserve `scene`/`inspect`.
 5. To show it in Codex, render:
 
 ```markdown

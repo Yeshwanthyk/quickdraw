@@ -2,9 +2,9 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { copyImageToClipboard } from "./clipboard";
+import { completeQuickdrawResult, type QuickdrawResult } from "./context";
 import { embedSceneMetadata } from "./png-metadata";
 import { renderSvgToPng } from "./render";
-import type { QuickdrawResult } from "./server";
 
 export type RenderAdapter = "dot" | "mermaid";
 
@@ -29,7 +29,7 @@ export function renderAdapterToPng(adapter: RenderAdapter, source: string, optio
       clipboard = false;
     }
   }
-  return { path: options.outPath, mime: "image/png", width: size.width, height: size.height, clipboard };
+  return completeQuickdrawResult({ path: options.outPath, mime: "image/png", width: size.width, height: size.height, clipboard });
 }
 
 function renderDotToPng(source: string, outPath: string) {

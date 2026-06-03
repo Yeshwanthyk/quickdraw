@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="820" height="220" viewBox="0 0 820 220" role="img" aria-labelledby="title desc">
+  <title id="title">Quickdraw speed doodle outline sidearm logo</title>
+  <desc id="desc">Minimal black and white quickdraw logo with a lighter outline sidearm and speed doodle trail.</desc>
+  <rect width="820" height="220" fill="#fff"/>
+  <g transform="translate(52 50)">
+    <path d="M18 74 H103 C111 74 118 80 118 88 H86 C80 88 76 92 75 98 L69 121 H48 L55 88 H34 C25 88 18 82 18 74 Z" fill="none" stroke="#111" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M36 80 H80" fill="none" stroke="#111" stroke-width="5" stroke-linecap="round"/>
+    <path d="M59 91 C59 101 75 101 75 91" fill="none" stroke="#111" stroke-width="5" stroke-linecap="round"/>
+    <path d="M132 69 C156 54 178 54 203 69" fill="none" stroke="#111" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M139 89 C160 78 181 78 202 90" fill="none" stroke="#111" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M145 48 C159 41 173 41 187 48" fill="none" stroke="#111" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M220 57 L223 65 L231 68 L223 71 L220 79 L217 71 L209 68 L217 65 Z" fill="#111"/>
+  </g>
+  <text x="360" y="116" font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="64" font-weight="850" fill="#111" letter-spacing="0">quickdraw</text>
+  <text x="364" y="150" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="18" font-weight="750" fill="#111" letter-spacing="0">fast mockups</text>
+</svg>

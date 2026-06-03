@@ -4,20 +4,13 @@ import { extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer as createViteServer, type ViteDevServer } from "vite";
 import { copyImageToClipboard } from "./clipboard";
+import { completeQuickdrawResult, type QuickdrawResult } from "./context";
 import { embedSceneMetadata } from "./png-metadata";
 import { normalizeScene, type SceneSpec } from "./spec";
 
 export type CliMode =
   | { kind: "blank"; scene?: SceneSpec }
   | { kind: "edit"; path: string; scene?: SceneSpec };
-
-export type QuickdrawResult = {
-  path: string;
-  mime: "image/png";
-  width: number;
-  height: number;
-  clipboard: boolean;
-};
 
 type ServerOptions = {
   open?: boolean;
@@ -117,13 +110,13 @@ export async function startQuickdrawServer(mode: CliMode, options: ServerOptions
               } catch {
                 clipboard = false;
               }
-              resolveResult({
+              resolveResult(completeQuickdrawResult({
                 path: outPath,
                 mime: "image/png",
                 width: body.width,
                 height: body.height,
                 clipboard
-              });
+              }));
               res.setHeader("content-type", "application/json");
               res.end(JSON.stringify({ ok: true }));
               return;
