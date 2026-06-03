@@ -6,7 +6,7 @@ import { readClipboardImage } from "./clipboard";
 import { contextFormats, formatQuickdrawContext, type ContextFormat, type QuickdrawResult } from "./context";
 import { extractSceneMetadata } from "./png-metadata";
 import { renderAsciiToPng, renderSceneToAscii, renderSceneToPng } from "./render";
-import { startQuickdrawServer, type CliMode } from "./server";
+import { QuickdrawCancelledError, startQuickdrawServer, type CliMode } from "./server";
 import { focusedAppBundleId, pasteTextIntoApp } from "./sinks";
 import { captureScreenshot } from "./screenshot";
 import { isSceneSpec, normalizeScene, type SceneSpec } from "./spec";
@@ -330,6 +330,7 @@ async function main() {
 }
 
 main().catch((error: unknown) => {
+  if (error instanceof QuickdrawCancelledError) process.exit(0);
   console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);
 });

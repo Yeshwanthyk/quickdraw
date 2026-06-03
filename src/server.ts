@@ -20,6 +20,13 @@ type SourcePayload =
   | { kind: "blank"; scene?: SceneSpec }
   | { kind: "image"; name: string; dataUrl: string; scene?: SceneSpec };
 
+export class QuickdrawCancelledError extends Error {
+  constructor() {
+    super("cancelled");
+    this.name = "QuickdrawCancelledError";
+  }
+}
+
 const imageMimeByExt: Record<string, string> = {
   ".png": "image/png",
   ".jpg": "image/jpeg",
@@ -70,6 +77,7 @@ export async function startQuickdrawServer(mode: CliMode, options: ServerOptions
   const vite: ViteDevServer = await createViteServer({
     root: fileURLToPath(new URL("..", import.meta.url)),
     appType: "spa",
+    logLevel: "silent",
     server: {
       host: "127.0.0.1",
       port: 0
@@ -123,9 +131,10 @@ export async function startQuickdrawServer(mode: CliMode, options: ServerOptions
             }
 
             if (url.pathname === "/api/cancel" && req.method === "POST") {
-              rejectResult(new Error("cancelled"));
               res.setHeader("content-type", "application/json");
-              res.end(JSON.stringify({ ok: true }));
+              res.end(JSON.stringify({ ok: true }), () => {
+                setTimeout(() => rejectResult(new QuickdrawCancelledError()), 0);
+              });
               return;
             }
 

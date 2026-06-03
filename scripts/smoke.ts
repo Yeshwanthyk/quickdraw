@@ -161,6 +161,44 @@ async function drawAndSaveViaCli(browser: Awaited<ReturnType<typeof chromium.lau
   }
 }
 
+async function cancelViaCli(browser: Awaited<ReturnType<typeof chromium.launch>>, mode: "grid" | "paint") {
+  const dir = mkdtempSync(join(tmpdir(), "quickdraw-cli-cancel-"));
+  const urlFile = join(dir, "url");
+  const proc = Bun.spawn(["bun", "run", "src/cli.ts", "--json"], {
+    cwd: process.cwd(),
+    env: { ...process.env, QUICKDRAW_NO_OPEN: "1", QUICKDRAW_URL_FILE: urlFile },
+    stdout: "pipe",
+    stderr: "pipe"
+  });
+  try {
+    await waitForFile(urlFile);
+    const page = await browser.newPage({ viewport: { width: 900, height: 620 } });
+    await page.goto(readFileSync(urlFile, "utf8"));
+    if (mode === "paint") {
+      await page.getByRole("button", { name: "Paint mode" }).click();
+      await page.getByRole("button", { name: "Cancel" }).click();
+    } else {
+      await page.getByRole("button", { name: "Close" }).click();
+    }
+    const exitCode = await Promise.race([
+      proc.exited,
+      new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), 3000))
+    ]);
+    if (exitCode === "timeout") {
+      proc.kill();
+      throw new Error(`CLI ${mode} cancel did not exit`);
+    }
+    const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+    if (exitCode !== 0 || stdout.trim() || stderr.trim()) {
+      throw new Error(`CLI ${mode} cancel was not quiet success\nexit=${exitCode}\nstderr=${stderr}\nstdout=${stdout}`);
+    }
+    await page.close().catch(() => {});
+  } catch (error) {
+    proc.kill();
+    throw error;
+  }
+}
+
 async function smokeTextEditor(browser: Awaited<ReturnType<typeof chromium.launch>>) {
   const session = await startQuickdrawServer({ kind: "blank" }, { open: false });
   try {
@@ -456,7 +494,6 @@ async function smokeGridDraw(browser: Awaited<ReturnType<typeof chromium.launch>
     await page.mouse.down();
     await page.mouse.move(box.x + 24 + 15 * 12, box.y + 44 + 8 * 22);
     await page.mouse.up();
-    await page.getByRole("button", { name: "Paint mode" }).click();
     await page.getByRole("button", { name: "Save" }).click();
     const result = await session.result;
     verifyResult(result);
@@ -491,7 +528,6 @@ async function smokeGridEdit(browser: Awaited<ReturnType<typeof chromium.launch>
     await page.mouse.down();
     await page.mouse.move(box.x + 24 + 11 * 12, box.y + 44 + 8 * 22);
     await page.mouse.up();
-    await page.getByRole("button", { name: "Paint mode" }).click();
     await page.getByRole("button", { name: "Save" }).click();
     const result = await session.result;
     verifyResult(result);
@@ -525,7 +561,6 @@ async function smokeGridText(browser: Awaited<ReturnType<typeof chromium.launch>
     await page.mouse.click(box.x + 24 + 10 * 12, box.y + 44 + 4 * 22);
     await page.getByRole("textbox", { name: "Grid text" }).fill("hello");
     await page.keyboard.press("Enter");
-    await page.getByRole("button", { name: "Paint mode" }).click();
     await page.getByRole("button", { name: "Save" }).click();
     const result = await session.result;
     verifyResult(result);
@@ -991,6 +1026,8 @@ async function main() {
     const gridEditResult = await smokeGridEdit(browser);
     const gridTextResult = await smokeGridText(browser);
     await smokeGridCopyAscii(browser);
+    await cancelViaCli(browser, "grid");
+    await cancelViaCli(browser, "paint");
     console.error("STEP rotatedTextEdit"); const rotatedTextResult = await smokeRotatedTextEdit(browser);
     const rotatedParityResult = await smokeRotatedTextParity(browser);
     const wrappedTextResult = await smokeWrappedText(browser);

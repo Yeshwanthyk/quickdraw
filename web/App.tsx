@@ -8,7 +8,7 @@ import { GridMode } from "./grid/GridMode";
 import { AppearancePanel, defaultGridStyle, type GridStyle } from "./grid/AppearancePanel";
 import { sceneToAscii } from "../src/ascii";
 import { useImageSource } from "./canvas/useImageSource";
-import { bindingFor, normalizeScene, reflowBoundArrows, sceneFromShapes } from "../src/spec";
+import { bindingFor, normalizeScene, reflowBoundArrows, sceneFromShapes, shapeAabb, type NormalizedScene } from "../src/spec";
 import { layoutText } from "../src/text-layout";
 import type { DrawColor, Shape, TextShape, Tool } from "./tools/types";
 
@@ -28,6 +28,11 @@ const toolOrderFor = (mode: "grid" | "paint"): Tool[] => (mode === "grid" ? grid
 const handleSize = 10;
 const rotateHandleOffset = 34;
 const resizeHandles = ["nw", "n", "ne", "e", "se", "s", "sw", "w"] as const;
+const asciiCellWidth = 8;
+const asciiCellHeight = 16;
+const asciiSavePadding = 14;
+const asciiSaveFontSize = 15;
+const asciiSaveLineHeight = 20;
 
 type Bounds = { x: number; y: number; width: number; height: number };
 type ResizeHandle = typeof resizeHandles[number];
@@ -39,6 +44,45 @@ type TransformPreview =
 
 function shapeId() {
   return crypto.randomUUID();
+}
+
+function gridSceneForSave(canvasSize: { width: number; height: number }, shapes: Shape[]): NormalizedScene {
+  let width = canvasSize.width;
+  let height = canvasSize.height;
+  for (const shape of shapes) {
+    const box = shapeAabb(shape);
+    width = Math.max(width, box.x + box.width + asciiCellWidth * 2);
+    height = Math.max(height, box.y + box.height + asciiCellHeight * 2);
+  }
+  return sceneFromShapes({ width, height, background: "#ffffff" }, shapes);
+}
+
+function asciiSceneToPngDataUrl(scene: NormalizedScene) {
+  const ascii = sceneToAscii(scene, { cellWidth: asciiCellWidth, cellHeight: asciiCellHeight });
+  const lines = ascii ? ascii.split("\n") : [""];
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("missing canvas context");
+  const font = `${asciiSaveFontSize}px "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace`;
+  ctx.font = font;
+  const textWidth = Math.max(1, ...lines.map((line) => ctx.measureText(line || " ").width));
+  canvas.width = Math.ceil(textWidth + asciiSavePadding * 2);
+  canvas.height = Math.ceil(lines.length * asciiSaveLineHeight + asciiSavePadding * 2);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.font = font;
+  ctx.fillStyle = "#111827";
+  ctx.textBaseline = "top";
+  lines.forEach((line, index) => ctx.fillText(line, asciiSavePadding, asciiSavePadding + index * asciiSaveLineHeight));
+  return { dataUrl: canvas.toDataURL("image/png"), width: canvas.width, height: canvas.height };
+}
+
+function closeWindowOrBlank() {
+  window.setTimeout(() => {
+    window.open("", "_self");
+    window.close();
+    window.location.replace("about:blank");
+  }, 0);
 }
 
 function clampZoom(zoom: number) {
@@ -450,7 +494,7 @@ export default function App() {
 
   const [asciiCopied, setAsciiCopied] = useState(false);
   const copyAscii = useCallback(async () => {
-    const text = sceneToAscii({ canvas: { width: canvasSize.width, height: canvasSize.height, background: "#ffffff" }, shapes });
+    const text = sceneToAscii(gridSceneForSave(canvasSize, shapes));
     try {
       await navigator.clipboard.writeText(text);
       setAsciiCopied(true);
@@ -561,8 +605,6 @@ export default function App() {
   }, [scheduleTransformPreview, selectedIds, shapes]);
 
   const done = useCallback(async () => {
-    const stage = stageRef.current;
-    if (!stage) return;
     setSaveState("saving");
     const textShape = textDraft ? textDraftToShape(textDraft) : null;
     const saveShapes = textDraft
@@ -576,6 +618,28 @@ export default function App() {
       setHistory((current) => pushHistory(current, saveShapes));
       setTextDraft(null);
     }
+    if (mode === "grid") {
+      try {
+        const scene = gridSceneForSave(canvasSize, saveShapes);
+        const { dataUrl, width, height } = asciiSceneToPngDataUrl(scene);
+        const response = await fetch("/api/done", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ dataUrl, width, height, scene })
+        });
+        if (!response.ok) throw new Error("save failed");
+        closeWindowOrBlank();
+      } catch {
+        setSaveState("error");
+      }
+      return;
+    }
+
+    const stage = stageRef.current;
+    if (!stage) {
+      setSaveState("error");
+      return;
+    }
     const selectionOutlines = stage.find(".selection-outline");
     selectionOutlines.forEach((node) => node.hide());
     try {
@@ -586,17 +650,19 @@ export default function App() {
         body: JSON.stringify({ dataUrl, width: canvasSize.width, height: canvasSize.height, scene: sceneFromShapes({ ...canvasSize, background: "#ffffff" }, saveShapes) })
       });
       if (!response.ok) throw new Error("save failed");
-      window.close();
+      closeWindowOrBlank();
     } catch {
       setSaveState("error");
     } finally {
       selectionOutlines.forEach((node) => node.show());
     }
-  }, [canvasSize, shapes, textDraft]);
+  }, [canvasSize, mode, shapes, textDraft]);
 
-  const cancel = useCallback(async () => {
-    await fetch("/api/cancel", { method: "POST" });
-    window.close();
+  const cancel = useCallback(() => {
+    setSaveState("saving");
+    const sent = navigator.sendBeacon?.("/api/cancel") ?? false;
+    if (!sent) void fetch("/api/cancel", { method: "POST", keepalive: true }).catch(() => {});
+    closeWindowOrBlank();
   }, []);
 
   const loadPastedImage = useCallback((file: File) => {
@@ -764,7 +830,11 @@ export default function App() {
           {mode === "grid" ? (
             <>
               <button className="action subtle" onClick={cancel}><X size={16} />Close</button>
-              <button className="action done" onClick={copyAscii} title="Copy as ASCII text"><Check size={16} />{asciiCopied ? "Copied" : "Copy ASCII"}</button>
+              <button className="action subtle" onClick={copyAscii} title="Copy as ASCII text"><Check size={16} />{asciiCopied ? "Copied" : "Copy ASCII"}</button>
+              {saveState === "error" && <span className="saveError">Save failed</span>}
+              <button className="action done" disabled={saveState === "saving"} onClick={done}>
+                <Check size={16} />{saveState === "saving" ? "Saving" : "Save"}
+              </button>
             </>
           ) : (
             <>
