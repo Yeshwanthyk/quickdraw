@@ -959,19 +959,19 @@ async function main() {
     if (!clipPath || !existsSync(clipPath)) throw new Error("clipboard image copy was not readable");
 
     const editResult = await drawAndSave(browser, { kind: "edit", path: blankResult.path });
-    const textResult = await smokeTextEditor(browser);
-    const activeTextResult = await smokeSaveActiveText(browser);
-    const selectionResult = await smokeSelectionTools(browser);
-    const multiSelectResult = await smokeMultiSelectDelete(browser);
-    const preciseLineHitResult = await smokePreciseLineHit(browser);
-    const zOrderResult = await smokeZOrder(browser);
-    const arrowEndpointResult = await smokeArrowEndpointEditor(browser);
-    const arrowBindingResult = await smokeArrowBinding(browser);
+    console.error("STEP textEditor"); const textResult = await smokeTextEditor(browser);
+    console.error("STEP saveActiveText"); const activeTextResult = await smokeSaveActiveText(browser);
+    console.error("STEP selectionTools"); const selectionResult = await smokeSelectionTools(browser);
+    console.error("STEP multiSelect"); const multiSelectResult = await smokeMultiSelectDelete(browser);
+    console.error("STEP preciseLineHit"); const preciseLineHitResult = await smokePreciseLineHit(browser);
+    console.error("STEP zOrder"); const zOrderResult = await smokeZOrder(browser);
+    console.error("STEP arrowEndpoint"); const arrowEndpointResult = await smokeArrowEndpointEditor(browser);
+    console.error("STEP arrowBinding"); const arrowBindingResult = await smokeArrowBinding(browser);
     const gridDrawResult = await smokeGridDraw(browser);
     const gridEditResult = await smokeGridEdit(browser);
     const gridTextResult = await smokeGridText(browser);
     await smokeGridCopyAscii(browser);
-    const rotatedTextResult = await smokeRotatedTextEdit(browser);
+    console.error("STEP rotatedTextEdit"); const rotatedTextResult = await smokeRotatedTextEdit(browser);
     const rotatedParityResult = await smokeRotatedTextParity(browser);
     const wrappedTextResult = await smokeWrappedText(browser);
     const imageDeselectResult = await smokeImageBackedDeselect(browser, blankResult.path);
