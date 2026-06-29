@@ -1,5 +1,7 @@
 import { randomBytes } from "node:crypto";
+import { once } from "node:events";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createServer as createNetServer, type AddressInfo } from "node:net";
 import { extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer as createViteServer, type ViteDevServer } from "vite";
@@ -52,6 +54,45 @@ function openBrowser(url: string) {
   Bun.spawn(command, { stdout: "ignore", stderr: "ignore" });
 }
 
+async function listenForOrigin(vite: ViteDevServer): Promise<string> {
+  const httpServer = vite.httpServer;
+  if (!httpServer) throw new Error("failed to create quickdraw server");
+
+  const listenPromise = vite.listen();
+  void listenPromise.catch(() => {});
+
+  if (!httpServer.listening) {
+    await Promise.race([
+      listenPromise.then(() => undefined),
+      once(httpServer, "listening").then(() => undefined)
+    ]);
+  }
+
+  const resolved = vite.resolvedUrls?.local[0]?.replace(/\/$/, "");
+  if (resolved) return resolved;
+
+  const address = httpServer.address();
+  if (!address || typeof address === "string") throw new Error("failed to start quickdraw server");
+  return originFromAddress(address);
+}
+
+function originFromAddress(address: AddressInfo): string {
+  const host = address.address.includes(":") ? `[${address.address}]` : address.address;
+  return `http://${host}:${address.port}`;
+}
+
+async function allocateLoopbackPort(): Promise<number> {
+  const server = createNetServer();
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => error ? reject(error) : resolve());
+  });
+  if (!address || typeof address === "string") throw new Error("failed to allocate quickdraw port");
+  return address.port;
+}
+
 function pngBufferFromDataUrl(dataUrl: string): Buffer {
   const marker = "base64,";
   const index = dataUrl.indexOf(marker);
@@ -66,6 +107,7 @@ export async function startQuickdrawServer(mode: CliMode, options: ServerOptions
   const source = sourceForMode(mode);
   const token = randomBytes(12).toString("hex");
   const outPath = join("/tmp", `quickdraw-${token.slice(0, 8)}.png`);
+  const port = await allocateLoopbackPort();
 
   let resolveResult!: (result: QuickdrawResult) => void;
   let rejectResult!: (error: Error) => void;
@@ -80,7 +122,8 @@ export async function startQuickdrawServer(mode: CliMode, options: ServerOptions
     logLevel: "silent",
     server: {
       host: "127.0.0.1",
-      port: 0
+      port,
+      strictPort: true
     },
     plugins: [
       {
@@ -144,9 +187,7 @@ export async function startQuickdrawServer(mode: CliMode, options: ServerOptions
       }
     ]
   });
-  await vite.listen();
-  const origin = vite.resolvedUrls?.local[0]?.replace(/\/$/, "");
-  if (!origin) throw new Error("failed to start quickdraw server");
+  const origin = await listenForOrigin(vite);
   const url = `${origin}/?token=${token}`;
   if (options.open !== false) openBrowser(url);
 
